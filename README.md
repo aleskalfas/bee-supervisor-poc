@@ -11,7 +11,7 @@ A proof-of-concept implementation of a multi-agent task management system that d
   - Automatic pool management and cleanup
   - Agent lifecycle management (create, destroy, acquire, release)
 
-- **Task Runner**: Handles task scheduling and execution with robust controls
+- **Task Manager**: Handles task scheduling and execution with robust controls
 
   - Task scheduling with configurable intervals
   - Permission-based task management
@@ -27,6 +27,42 @@ A proof-of-concept implementation of a multi-agent task management system that d
 
 ## Architecture
 
+```mermaid
+graph TD
+    BS[Bee Supervisor System]
+    
+    BS --> AR[Agent Registry]
+    BS --> TR[Task Manager]
+    
+    %% Agent Registry Section
+    AR --> AT[Agent Types]
+    AR --> AP[Agent Pool]
+    AR --> AL[Agent Lifecycle]
+    
+    %% Agent Lifecycle Core Functions
+    AL --> Create[Create]
+    AL --> Acquire[Acquire]
+    AL --> Release[Release]
+    
+    %% Task Manager Section
+    TR --> TS[Task Scheduler]
+    TR --> TE[Task Executor]
+    TR --> TH[Task History]
+    
+    %% Integration
+    AR <--> TR
+    
+    classDef default fill:#f9f9f9,stroke:#333,stroke-width:1px,color:black
+    classDef registry fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:black
+    classDef runner fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:black
+    
+    class BS default
+    class AR,AT,AP,AL,Create,Acquire,Release registry
+    class TR,TS,TE,TH runner
+```
+
+
+
 The system consists of two main components:
 
 ### Agent Registry
@@ -40,7 +76,7 @@ Key features:
 - Agent lifecycle hooks
 - Dynamic scaling of agent pools
 
-### Task Runner
+### Task Manager
 
 Handles task execution and scheduling.
 
@@ -67,6 +103,54 @@ The following showcase demonstrates the system's capabilities through a poetry g
    - Flowers
 4. **Task Execution**: Each agent generates a unique poem for its assigned topic
 5. **Result Collection**: The supervisor collects and presents all generated poems
+
+```mermaid
+sequenceDiagram
+    participant S as Supervisor
+    participant AR as Agent Registry
+    participant P as Poet Pool
+    participant A as Poet Agents
+    participant T as Task Manager
+    participant R as Results
+
+    %% Agent Type Registration and Pool Creation
+    S->>AR: Register "poet" agent type
+    AR->>P: Initialize pool (size: 5)
+    loop Create 5 Poet Agents
+        AR->>A: Create poet agent
+        A-->>P: Add to pool
+    end
+    P-->>AR: Pool ready (5 agents)
+
+    %% Task Distribution
+    rect rgb(248, 248, 248)
+        Note over S,R: <b>Poetry Generation Process</b>
+        
+        %% Schedule Tasks
+        S->>T: <b>Schedule "Bee" poem task</b>
+        S->>T: <b>Schedule "Hive" poem task</b>
+        S->>T: <b>Schedule "Queen" poem task</b>
+        S->>T: <b>Schedule "Sun" poem task</b>
+        S->>T: <b>Schedule "Flowers" poem task</b>
+
+        %% Task Execution
+        loop For each topic
+            T->>AR: <b>Request available poet</b>
+            AR->>P: <b>Get poet from pool</b>
+            P-->>T: <b>Provide poet agent</b>
+            T->>A: <b>Generate poem for topic</b>
+            A-->>R: <b>Submit generated poem</b>
+            T->>AR: <b>Release poet agent</b>
+            AR->>P: <b>Return poet to pool</b>
+        end
+    end
+
+    %% Result Collection
+    R->>S: Collect all poems
+    S->>S: Present poems collection
+
+    Note over S,R: Final output: 5 poems (Bee, Hive, Queen, Sun, Flowers)
+```
 
 ### Run
 
