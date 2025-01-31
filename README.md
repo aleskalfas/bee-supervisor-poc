@@ -1,6 +1,6 @@
 # 🐝 Bee Supervisor
 
-A proof-of-concept implementation of a multi-agent task management system that demonstrates hierarchical agent coordination and task execution.
+A proof-of-concept implementation of a multi-agent task management system that demonstrates hierarchical agent coordination and task based on [BeeAI Framework](https://i-am-bee.github.io/bee-agent-framework#/) ❤️.
 
 ## Features
 
