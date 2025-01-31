@@ -52,9 +52,9 @@ graph TD
     %% Integration
     AR <--> TR
     
-    classDef default fill:#f9f9f9,stroke:#333,stroke-width:1px,color:black
-    classDef registry fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:black
-    classDef runner fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:black
+    classDef default fill:#f9f9f9,stroke:#333,stroke-width:1px,color:#5a5a5a
+    classDef registry fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#5a5a5a
+    classDef runner fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#5a5a5a
     
     class BS default
     class AR,AT,AP,AL,Create,Acquire,Release registry
@@ -123,25 +123,25 @@ sequenceDiagram
     P-->>AR: Pool ready (5 agents)
 
     %% Task Distribution
-    rect rgb(248, 248, 248)
-        Note over S,R: <b>Poetry Generation Process</b>
+    rect rgb(20, 20, 20)
+        Note over S,R: Poetry Generation Process
         
         %% Schedule Tasks
-        S->>T: <b>Schedule "Bee" poem task</b>
-        S->>T: <b>Schedule "Hive" poem task</b>
-        S->>T: <b>Schedule "Queen" poem task</b>
-        S->>T: <b>Schedule "Sun" poem task</b>
-        S->>T: <b>Schedule "Flowers" poem task</b>
+        S->>T: Schedule "Bee" poem task
+        S->>T: Schedule "Hive" poem task
+        S->>T: Schedule "Queen" poem task
+        S->>T: Schedule "Sun" poem task
+        S->>T: Schedule "Flowers" poem task
 
         %% Task Execution
         loop For each topic
-            T->>AR: <b>Request available poet</b>
-            AR->>P: <b>Get poet from pool</b>
-            P-->>T: <b>Provide poet agent</b>
-            T->>A: <b>Generate poem for topic</b>
-            A-->>R: <b>Submit generated poem</b>
-            T->>AR: <b>Release poet agent</b>
-            AR->>P: <b>Return poet to pool</b>
+            T->>AR: Request available poet
+            AR->>P: Get poet from pool
+            P-->>T: Provide poet agent
+            T->>A: Generate poem for topic
+            A-->>R: Submit generated poem
+            T->>AR: Release poet agent
+            AR->>P: Return poet to pool
         end
     end
 
