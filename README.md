@@ -68,13 +68,13 @@ The following showcase demonstrates the system's capabilities through a poetry g
 4. **Task Execution**: Each agent generates a unique poem for its assigned topic
 5. **Result Collection**: The supervisor collects and presents all generated poems
 
-## Run
+### Run
 
-`npm start`
+`npm start <<< "Hi, can you create poem about each of these topics: bee, hive, queen, sun, flowers?"`
 
 ### Live Demo
 
-[Place your console log video here]
+https://github.com/user-attachments/assets/fe93c1ad-3e2d-4e64-9aaf-dc4e33375db3
 
 ### Example Output
 
