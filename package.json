@@ -34,9 +34,11 @@
   "dependencies": {
     "@google-cloud/vertexai": "^1.9.2",
     "@ibm-generative-ai/node-sdk": "^3.2.4",
+    "@langchain/community": "^0.3.28",
     "@opentelemetry/sdk-node": "^0.57.0",
     "bee-agent-framework": "^0.0.59",
     "bee-observe-connector": "^0.0.6",
+    "discord.js": "^14.17.3",
     "dotenv": "^16.4.5",
     "groq-sdk": "^0.7.0",
     "ollama": "^0.5.11",
