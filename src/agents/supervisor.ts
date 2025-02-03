@@ -3,6 +3,11 @@ import { TaskManager } from "src/tasks/task-manager.js";
 import { TaskManagerTool } from "src/tasks/tools.js";
 import { AgentRegistry } from "./agent-registry.js";
 import { AgentRegistryTool } from "./tools.js";
+import {
+  DiscordGetMessagesTool,
+  DiscordSendMessagesTool,
+} from "@langchain/community/tools/discord";
+import { LangChainTool } from "bee-agent-framework/adapters/langchain/tools";
 
 export enum AgentTypes {
   BOSS = "boss",
@@ -37,6 +42,14 @@ export class ToolsFactory extends BaseToolsFactory {
     return [
       () => new AgentRegistryTool({ registry: this.registry }),
       () => new TaskManagerTool({ taskManager: this.taskManager }),
+      () =>
+        new LangChainTool({
+          tool: new DiscordGetMessagesTool(),
+        }),
+      () =>
+        new LangChainTool({
+          tool: new DiscordSendMessagesTool(),
+        }),
     ];
   }
 }
