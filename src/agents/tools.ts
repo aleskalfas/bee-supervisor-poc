@@ -40,7 +40,6 @@ export interface AgentRegistryToolResult {
 export const GetAvailableToolsSchema = z
   .object({
     method: z.literal("getAvailableTools"),
-    agentKind: AgentKindSchema,
   })
   .describe("Get all available tools usable in agents");
 
@@ -156,7 +155,7 @@ export class AgentRegistryTool extends Tool<
     let data: AgentRegistryToolResultData;
     switch (input.method) {
       case "getAvailableTools":
-        data = this.registry.getAvailableTools(input.agentKind);
+        data = this.registry.getAvailableTools("operator");
         break;
       case "registerAgentType":
         data = this.registry.registerAgentType(input.config);
@@ -165,10 +164,10 @@ export class AgentRegistryTool extends Tool<
         data = this.registry.getAgentTypes();
         break;
       case "getAgentTypeConfig":
-        data = this.registry.getAgentTypeConfig(input.agentKind, input.type);
+        data = this.registry.getAgentTypeConfig("operator", input.type);
         break;
       case "acquireAgent":
-        data = await this.registry.acquireAgent(input.agentKind, input.type);
+        data = await this.registry.acquireAgent("operator", input.type);
         data = { ...data, instance: undefined };
         break;
       case "releaseAgent":
@@ -184,7 +183,7 @@ export class AgentRegistryTool extends Tool<
         data = this.registry.getAgent(input.agentId);
         break;
       case "getPoolStats":
-        data = this.registry.getPoolStats(input.agentKind, input.type);
+        data = this.registry.getPoolStats("operator", input.type);
         break;
     }
     return new JSONToolOutput({

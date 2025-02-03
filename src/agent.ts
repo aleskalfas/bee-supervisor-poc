@@ -113,8 +113,8 @@ ${prompt}`,
         {
           execution: {
             maxIterations: 100,
-            maxRetriesPerStep: 0,
-            totalMaxRetries: 0,
+            maxRetriesPerStep: 2,
+            // totalMaxRetries: 0,
           },
         },
       )
