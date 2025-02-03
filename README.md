@@ -30,38 +30,36 @@ A proof-of-concept implementation of a multi-agent task management system that d
 ```mermaid
 graph TD
     BS[Bee Supervisor System]
-    
+
     BS --> AR[Agent Registry]
     BS --> TR[Task Manager]
-    
+
     %% Agent Registry Section
     AR --> AT[Agent Types]
     AR --> AP[Agent Pool]
     AR --> AL[Agent Lifecycle]
-    
+
     %% Agent Lifecycle Core Functions
     AL --> Create[Create]
     AL --> Acquire[Acquire]
     AL --> Release[Release]
-    
+
     %% Task Manager Section
     TR --> TS[Task Scheduler]
     TR --> TE[Task Executor]
     TR --> TH[Task History]
-    
+
     %% Integration
     AR <--> TR
-    
+
     classDef default fill:#f9f9f9,stroke:#333,stroke-width:1px,color:#5a5a5a
     classDef registry fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#5a5a5a
     classDef runner fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#5a5a5a
-    
+
     class BS default
     class AR,AT,AP,AL,Create,Acquire,Release registry
     class TR,TS,TE,TH runner
 ```
-
-
 
 The system consists of two main components:
 
@@ -125,7 +123,7 @@ sequenceDiagram
     %% Task Distribution
     rect rgb(20, 20, 20)
         Note over S,R: Poetry Generation Process
-        
+
         %% Schedule Tasks
         S->>T: Schedule "Bee" poem task
         S->>T: Schedule "Hive" poem task
