@@ -9,52 +9,33 @@ import { TaskManager } from "./tasks/task-manager.js";
 import * as supervisor from "./agents/supervisor.js";
 import * as operator from "./agents/operator.js";
 
-const registry = new AgentRegistry<BeeAgent>(
-  new Map([
-    ["operator", operator.availableTools as string[]],
-    ["supervisor", supervisor.availableTools as string[]],
-  ]),
-  {
-    async onCreate(
-      { kind, tools, type, instructions, description },
-      poolStats,
-    ): Promise<{ id: string; instance: BeeAgent }> {
-      const num = poolStats.created + 1;
-      const id = `${kind}:${type}[${num}]`;
-      let instance;
-      switch (kind) {
-        case "supervisor":
-          instance = createAgent({
-            agentKind: kind,
-            agentType: type,
-            agentId: id,
-            description,
-            instructions,
-            tools: tools as supervisor.AvailableTools[],
-            registry: registry as AgentRegistry<unknown>,
-            taskManager,
-          } satisfies supervisor.CreateAgentInput);
-          break;
-        case "operator":
-          instance = createAgent({
-            agentKind: kind,
-            agentType: type,
-            agentId: id,
-            description,
-            instructions,
-            // @ts-ignore
-            tools: tools as operator.AvailableTools[],
-          } satisfies operator.CreateAgentInput);
-          break;
-      }
+const registry = new AgentRegistry<BeeAgent>({
+  async onCreate(
+    { kind, tools, type, instructions, description },
+    poolStats,
+    toolsFactory,
+  ): Promise<{ id: string; instance: BeeAgent }> {
+    const num = poolStats.created + 1;
+    const id = `${kind}:${type}[${num}]`;
+    tools = tools == null ? toolsFactory.getAvailableToolsNames() : tools;
+    const instance = createAgent(
+      {
+        agentKind: kind,
+        agentType: type,
+        agentId: id,
+        description,
+        instructions,
+        tools,
+      },
+      toolsFactory,
+    );
 
-      return { id, instance };
-    },
-    async onDestroy(instance) {
-      instance.destroy();
-    },
+    return { id, instance };
   },
-);
+  async onDestroy(instance) {
+    instance.destroy();
+  },
+});
 
 const taskManager = new TaskManager(async (task) => {
   const { instance: agent } = await registry.acquireAgent(task.agentKind, task.agentType);
@@ -64,25 +45,29 @@ const taskManager = new TaskManager(async (task) => {
     {
       execution: {
         maxIterations: 8,
-        maxRetriesPerStep: 0,
-        totalMaxRetries: 0,
+        maxRetriesPerStep: 2,
+        totalMaxRetries: 10,
       },
     },
   );
   return resp.result.text;
 });
 
+registry.registerToolsFactories([
+  ["supervisor", new supervisor.ToolsFactory(registry, taskManager)],
+  ["operator", new operator.ToolsFactory()],
+]);
+
 registry.registerAgentType({
   autoPopulatePool: false,
   kind: AgentKindSchema.Enum.supervisor,
-  tools: supervisor.availableTools,
   type: supervisor.AgentTypes.BOSS,
   instructions: "",
   description: "The boss supervisor agent that control whole app.",
   maxPoolSize: 1,
 });
 
-const { instance: supervisorAgent, id: supervisorAgentId } = await registry.acquireAgent(
+const { instance: supervisorAgent, agentId: supervisorAgentId } = await registry.acquireAgent(
   AgentKindSchema.Enum.supervisor,
   supervisor.AgentTypes.BOSS,
 );
@@ -97,6 +82,7 @@ const { instance: supervisorAgent, id: supervisorAgentId } = await registry.acqu
 // Can you list their results?
 
 // Can you create poems on each of these topics: night, sky, fall, love, hate?
+// Can you get list of articles about each of these topics: deepseek, interstellar engine, agi?
 
 const reader = createConsoleReader({ fallback: "What is the current weather in Las Vegas?" });
 for await (const { prompt } of reader) {
@@ -114,7 +100,7 @@ ${prompt}`,
           execution: {
             maxIterations: 100,
             maxRetriesPerStep: 2,
-            // totalMaxRetries: 0,
+            totalMaxRetries: 10,
           },
         },
       )

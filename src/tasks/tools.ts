@@ -162,7 +162,8 @@ export class TaskManagerTool extends Tool<
         data = this.taskManager.scheduleTask(input.task, input.supervisorAgentId);
         break;
       case "startTask":
-        data = await this.taskManager.startTask(input.taskId, input.supervisorAgentId);
+        this.taskManager.startTask(input.taskId, input.supervisorAgentId);
+        data = true;
         break;
       case "stopTask":
         data = this.taskManager.stopTask(input.taskId, input.supervisorAgentId);
