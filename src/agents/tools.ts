@@ -12,8 +12,8 @@ import {
   AgentConfig,
   AgentConfigSchema,
   AgentInstanceRef,
-  AgentKindSchema,
   AgentRegistry,
+  AvailableTool,
   PoolStats,
 } from "./agent-registry.js";
 
@@ -29,7 +29,8 @@ export type AgentRegistryToolResultData =
   | Agent[]
   | Agent
   | PoolStats
-  | AgentInstanceRef<unknown>;
+  | AgentInstanceRef<unknown>
+  | AvailableTool[];
 
 export interface AgentRegistryToolResult {
   method: string;
@@ -59,7 +60,6 @@ export const GetAgentTypesSchema = z
 export const GetAgentTypeConfigSchema = z
   .object({
     method: z.literal("getAgentTypeConfig"),
-    agentKind: AgentKindSchema,
     type: z.string(),
   })
   .describe("Get configuration for a specific agent type");
@@ -67,7 +67,6 @@ export const GetAgentTypeConfigSchema = z
 export const AcquireAgentSchema = z
   .object({
     method: z.literal("acquireAgent"),
-    agentKind: AgentKindSchema,
     type: z.string(),
   })
   .describe("Acquire an agent instance from the pool or create a new one");
@@ -102,7 +101,6 @@ export const GetAgentSchema = z
 export const GetPoolStatsSchema = z
   .object({
     method: z.literal("getPoolStats"),
-    agentKind: AgentKindSchema,
     type: z.string(),
   })
   .describe("Get statistics about the agent pool for a specific type");
@@ -155,7 +153,7 @@ export class AgentRegistryTool extends Tool<
     let data: AgentRegistryToolResultData;
     switch (input.method) {
       case "getAvailableTools":
-        data = this.registry.getAvailableTools("operator");
+        data = this.registry.getToolsFactory("operator").getAvailableTools();
         break;
       case "registerAgentType":
         data = this.registry.registerAgentType(input.config);

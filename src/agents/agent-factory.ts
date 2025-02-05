@@ -1,21 +1,24 @@
 import { getChatLLM } from "src/helpers/llm.js";
 import { AgentKind } from "./agent-registry.js";
 import * as supervisor from "./supervisor.js";
-import * as operator from "./operator.js";
 import { BeeAgent } from "bee-agent-framework/agents/bee/agent";
 import { UnconstrainedMemory } from "bee-agent-framework/memory/unconstrainedMemory";
 import { TokenMemory } from "bee-agent-framework/memory/tokenMemory";
+import { BaseToolsFactory } from "src/base/tools-factory.js";
 
-export interface BaseCreateAgentInput<TAvailableTools> {
+export interface BaseCreateAgentInput {
   agentKind: AgentKind;
   agentType: string;
   agentId: string;
   instructions: string;
   description: string;
-  tools: TAvailableTools[];
+  tools: string[];
 }
 
-export function createAgent<TInput extends BaseCreateAgentInput<unknown>>(input: TInput) {
+export function createAgent<TInput extends BaseCreateAgentInput>(
+  input: TInput,
+  toolsFactory: BaseToolsFactory,
+) {
   const llm = getChatLLM(input.agentKind);
   const generalInstructions = `You are a ${input.agentKind} kind of agent (agentId=${input.agentId}, agentType=${input.agentType}). ${input.instructions}`;
   switch (input.agentKind) {
@@ -27,7 +30,7 @@ export function createAgent<TInput extends BaseCreateAgentInput<unknown>>(input:
         },
         llm,
         memory: new UnconstrainedMemory(),
-        tools: supervisor.createTools(input as supervisor.CreateAgentInput),
+        tools: toolsFactory.createTools(input.tools),
         templates: {
           system: (template) =>
             template.fork((config) => {
@@ -43,7 +46,7 @@ export function createAgent<TInput extends BaseCreateAgentInput<unknown>>(input:
         },
         llm,
         memory: new TokenMemory({ llm }),
-        tools: operator.createTools(input as operator.CreateAgentInput),
+        tools: toolsFactory.createTools(input.tools),
         templates: {
           system: (template) =>
             template.fork((config) => {

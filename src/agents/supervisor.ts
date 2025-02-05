@@ -1,6 +1,6 @@
+import { BaseToolsFactory, ToolFactoryMethod } from "src/base/tools-factory.js";
 import { TaskManager } from "src/tasks/task-manager.js";
 import { TaskManagerTool } from "src/tasks/tools.js";
-import { BaseCreateAgentInput } from "./agent-factory.js";
 import { AgentRegistry } from "./agent-registry.js";
 import { AgentRegistryTool } from "./tools.js";
 
@@ -25,31 +25,18 @@ You work with two systems agent_registry and task_manager. agent_registry serves
 
 Your role is to ensure efficient coordination between agents and tasks while maintaining proper access control and resource utilization.`;
 
-export enum AvailableTools {
-  AGENT_REGISTRY = "agent_registry",
-  TASK_MANAGER = "task_manager",
-}
-export type AvailableToolsType = `${AvailableTools}`;
-export const availableTools = Object.values(AvailableTools);
+export class ToolsFactory extends BaseToolsFactory {
+  constructor(
+    protected registry: AgentRegistry<any>,
+    protected taskManager: TaskManager,
+  ) {
+    super();
+  }
 
-export interface CreateAgentInput extends BaseCreateAgentInput<AvailableToolsType> {
-  registry?: AgentRegistry<unknown>;
-  taskManager?: TaskManager;
-}
-
-export function createTools({ tools, registry, taskManager }: CreateAgentInput) {
-  return tools.map((tool) => {
-    switch (tool) {
-      case "agent_registry":
-        if (!registry) {
-          throw new Error(`Missing registry`);
-        }
-        return new AgentRegistryTool({ registry });
-      case "task_manager":
-        if (!taskManager) {
-          throw new Error(`Missing task manager`);
-        }
-        return new TaskManagerTool({ taskManager });
-    }
-  });
+  getFactoriesMethods(): ToolFactoryMethod[] {
+    return [
+      () => new AgentRegistryTool({ registry: this.registry }),
+      () => new TaskManagerTool({ taskManager: this.taskManager }),
+    ];
+  }
 }

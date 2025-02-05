@@ -1,23 +1,42 @@
-import { DuckDuckGoSearchTool } from "bee-agent-framework/tools/search/duckDuckGoSearch";
-import { BaseCreateAgentInput } from "./agent-factory.js";
+// import { DuckDuckGoSearchTool } from "bee-agent-framework/tools/search/duckDuckGoSearch";
 import { ArXivTool } from "bee-agent-framework/tools/arxiv";
-import { AnyTool } from "bee-agent-framework/tools/base";
+import { DuckDuckGoSearchTool } from "bee-agent-framework/tools/search/duckDuckGoSearch";
+import { BaseToolsFactory, ToolFactoryMethod } from "src/base/tools-factory.js";
 
-export enum AvailableTools {
-  DUCK_DUCK_GO = "duckDuckGo",
-  ARXIV = "arxiv",
-}
+// export enum AvailableToolEnum {
+//   // DUCK_DUCK_GO = "duckDuckGo",
+//   ARXIV = "arxiv",
+// }
 
-export type AvailableToolsType = `${AvailableTools}`;
-export const availableTools = Object.values(AvailableTools);
+// export type AvailableToolType = `${AvailableToolEnum}`;
 
-export interface CreateAgentInput extends BaseCreateAgentInput<AvailableToolsType> {}
+// const toolsMap = new Map<AvailableToolType, () => AnyTool>([
+//   // [AvailableTools.DUCK_DUCK_GO, new DuckDuckGoSearchTool()],
+//   [AvailableToolEnum.ARXIV, () => new ArXivTool()],
+// ]);
 
-const toolsMap = new Map<AvailableToolsType, AnyTool>([
-  [AvailableTools.DUCK_DUCK_GO, new DuckDuckGoSearchTool()],
-  [AvailableTools.ARXIV, new ArXivTool()],
-]);
+// export const availableToolValues = Object.values(AvailableToolEnum);
+// export function getAvailableTools(tools: AvailableToolType[]): AvailableTool[] {
+//   return tools
+//     .map((t) => toolsMap.get(t))
+//     .filter((t) => !!t)
+//     .map((t) => {
+//       const tool = t();
+//       return JSON.stringify({ name: tool.name, description: tool.description });
+//     });
+// }
 
-export function createTools({ tools }: CreateAgentInput) {
-  return tools.map((t) => toolsMap.get(t)).filter((t) => !!t);
+// export interface CreateAgentInput extends BaseCreateAgentInput<AvailableToolType> {}
+
+// export function createTools({ tools }: CreateAgentInput) {
+//   return tools
+//     .map((t) => toolsMap.get(t))
+//     .filter((t) => !!t)
+//     .map((t) => t());
+// }
+
+export class ToolsFactory extends BaseToolsFactory {
+  getFactoriesMethods(): ToolFactoryMethod[] {
+    return [() => new DuckDuckGoSearchTool(), () => new ArXivTool()];
+  }
 }

@@ -1,4 +1,5 @@
 import { Logger } from "bee-agent-framework/logger/logger";
+import { BaseToolsFactory } from "src/base/tools-factory.js";
 import { z } from "zod";
 
 export const AgentKindSchema = z
@@ -19,7 +20,12 @@ export const AgentConfigSchema = z.object({
   description: z
     .string()
     .describe("Description of the agent's behavior and purpose of his existence."),
-  tools: z.array(z.string()).describe("List of tool identifiers that this agent type can utilize"),
+  tools: z
+    .array(z.string())
+    .nullish()
+    .describe(
+      "List of tool identifiers that this agent type can utilize. Null/undefined means all available.",
+    ),
   maxPoolSize: z
     .number()
     .int()
@@ -55,6 +61,16 @@ export const AgentSchema = z.object({
 export type Agent = z.infer<typeof AgentSchema>;
 
 /**
+ * Schema for an available tool.
+ */
+export const AvailableToolSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+});
+
+export type AvailableTool = z.infer<typeof AvailableToolSchema>;
+
+/**
  * Schema for pool statistics of an agent type
  * Provides information about pool capacity and utilization
  */
@@ -81,11 +97,14 @@ export interface AgentLifecycleCallbacks<TAgentInstance> {
   /**
    * Called when a new agent needs to be created
    * @param config - Configuration for the agent
+   * @param poolStats - Statistics of the agent pool
+   * @param toolsFactory - Factory to create tools
    * @returns Promise resolving to the new agent's ID
    */
   onCreate: (
     config: AgentConfig,
     poolStats: PoolStats,
+    toolsFactory: BaseToolsFactory,
   ) => Promise<{ id: string; instance: TAgentInstance }>;
 
   /**
@@ -112,8 +131,15 @@ export interface AgentLifecycleCallbacks<TAgentInstance> {
 type AgentTypePoolMap = Map<string, Set<string>>;
 type AgentConfigMap = Map<string, AgentConfig>;
 export interface AgentInstanceRef<TInstance> {
-  id: string;
+  agentId: string;
   instance: TInstance;
+}
+
+function ref<TAgentInstance>(
+  agentId: string,
+  instance: TAgentInstance,
+): AgentInstanceRef<TAgentInstance> {
+  return { agentId, instance };
 }
 
 /**
@@ -130,7 +156,7 @@ export interface AgentInstanceRef<TInstance> {
  */
 export class AgentRegistry<TAgentInstance> {
   private readonly logger: Logger;
-  /** Map of registered agent types and their configurations */
+  /** Map of registered agent kind and their configurations */
   private agentConfigs: Map<AgentKind, AgentConfigMap>;
   /** Map of all active agent instances */
   private activeAgents = new Map<string, Agent>();
@@ -140,25 +166,28 @@ export class AgentRegistry<TAgentInstance> {
   private agentInstances = new Map<string, TAgentInstance>();
   /** Callbacks for agent lifecycle events */
   private callbacks: AgentLifecycleCallbacks<TAgentInstance>;
-  /** List of tools available for use by agents per agent kinds */
-  private readonly availableTools: Map<AgentKind, string[]>;
+  /** Maps of tools factories for use by agents per agent kinds */
+  private toolsFactory = new Map<AgentKind, BaseToolsFactory>();
 
   /**
    * Creates a new AgentRegistry instance
-   * @param availableTools - Array of tool identifiers available for use by agents per agent types.
    * @param callbacks - Callbacks for handling agent lifecycle events
    */
-  constructor(
-    availableTools: Map<AgentKind, string[]>,
-    callbacks: AgentLifecycleCallbacks<TAgentInstance>,
-  ) {
+  constructor(callbacks: AgentLifecycleCallbacks<TAgentInstance>) {
     this.logger = Logger.root.child({ name: "AgentRegistry" });
-    this.logger.info("Initializing AgentRegistry", { availableTools });
-    this.availableTools = availableTools;
+    this.logger.info("Initializing AgentRegistry");
     this.callbacks = callbacks;
     // Initialize agent pools for all agent kinds
     this.agentConfigs = new Map(AgentKindSchema.options.map((kind) => [kind, new Map()]));
     this.agentPools = new Map(AgentKindSchema.options.map((kind) => [kind, new Map()]));
+  }
+
+  /**
+   * Register tools factory for a specific agent type
+   * @param tuples
+   */
+  registerToolsFactories(tuples: [AgentKind, BaseToolsFactory][]) {
+    tuples.map(([kind, factory]) => this.toolsFactory.set(kind, factory));
   }
 
   private getAgentKindPoolMap(kind: AgentKind) {
@@ -186,13 +215,16 @@ export class AgentRegistry<TAgentInstance> {
     return typesMap;
   }
 
-  /**
-   * Returns a copy of the available tools list
-   * @returns Array of available tool identifiers
-   */
-  getAvailableTools(agentKind: AgentKind): string[] {
-    this.logger.trace("Getting available tools");
-    return (this.availableTools.get(agentKind) || []).slice();
+  getToolsFactory(agentKind: AgentKind): BaseToolsFactory {
+    const factory = this.toolsFactory.get(agentKind);
+    if (!factory) {
+      this.logger.error(`There is missing tools factory for the '${agentKind}' agent kind.`, {
+        agentKind,
+      });
+      throw new Error(`There is missing tools factory for the '${agentKind}' agent kind`);
+    }
+
+    return factory;
   }
 
   /**
@@ -213,6 +245,25 @@ export class AgentRegistry<TAgentInstance> {
     if (agentTypesMap.has(type)) {
       this.logger.error("Agent type already registered", { type: type });
       throw new Error(`Agent type '${type}' is already registered`);
+    }
+
+    const toolsFactory = this.getToolsFactory(config.kind);
+    const availableTools = toolsFactory.getAvailableTools();
+    if (config.tools) {
+      const undefinedTools = config.tools.filter(
+        (tool) => !availableTools.some((at) => at.name === tool),
+      );
+      if (undefinedTools.length) {
+        this.logger.error(`Tool wasn't found between available tools `, {
+          availableTools: availableTools.map((at) => at.name),
+          undefinedTools,
+        });
+        throw new Error(
+          `Tools [${undefinedTools.join(",")}] weren't found between available tools [${availableTools.map((at) => at.name).join(",")}]`,
+        );
+      }
+    } else {
+      config.tools = toolsFactory.getAvailableToolsNames();
     }
 
     agentTypesMap.set(type, config);
@@ -263,7 +314,7 @@ export class AgentRegistry<TAgentInstance> {
     });
 
     for (let i = 0; i < needed; i++) {
-      const { id: agentId } = await this.createAgent(kind, type, true);
+      const { agentId: agentId } = await this.createAgent(kind, type, true);
       pool.add(agentId);
       this.logger.trace("Added agent to pool", { kind, type, agentId });
     }
@@ -326,7 +377,7 @@ export class AgentRegistry<TAgentInstance> {
           await this.callbacks.onAcquire(agentId);
         }
 
-        return { id: agentId, instance: agent.instance };
+        return ref(agentId, agent.instance);
       }
     }
 
@@ -396,7 +447,12 @@ export class AgentRegistry<TAgentInstance> {
     this.logger.debug("Creating new agent", { kind, type, forPool });
     const config = this.getAgentTypeConfig(kind, type);
     const poolStats = this.getPoolStats(kind, type);
-    const { id: agentId, instance } = await this.callbacks.onCreate(config, poolStats);
+    const toolsFactory = this.getToolsFactory(kind);
+    const { id: agentId, instance } = await this.callbacks.onCreate(
+      config,
+      poolStats,
+      toolsFactory,
+    );
 
     this.activeAgents.set(agentId, {
       id: agentId,
@@ -408,7 +464,7 @@ export class AgentRegistry<TAgentInstance> {
     });
 
     this.logger.info("Agent created successfully", { agentId, type, forPool });
-    return { id: agentId, instance };
+    return ref(agentId, instance);
   }
 
   /**
