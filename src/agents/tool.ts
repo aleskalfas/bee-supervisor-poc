@@ -17,6 +17,8 @@ import {
   PoolStats,
 } from "./agent-registry.js";
 
+export const TOOL_NAME = "agent_registry";
+
 export interface AgentRegistryToolInput extends BaseToolOptions {
   registry: AgentRegistry<unknown>;
 }
@@ -113,7 +115,7 @@ export class AgentRegistryTool extends Tool<
   JSONToolOutput<AgentRegistryToolResult>,
   AgentRegistryToolInput
 > {
-  name = "agent_registry";
+  name = TOOL_NAME;
   description =
     "The registry is used for managing AI agent configurations, instances, and agent pools.";
 

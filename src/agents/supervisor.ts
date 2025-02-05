@@ -1,8 +1,8 @@
 import { BaseToolsFactory, ToolFactoryMethod } from "src/base/tools-factory.js";
 import { TaskManager } from "src/tasks/task-manager.js";
-import { TaskManagerTool } from "src/tasks/tools.js";
+import { TaskManagerTool, TOOL_NAME as taskManagerToolName } from "src/tasks/tools.js";
 import { AgentRegistry } from "./agent-registry.js";
-import { AgentRegistryTool } from "./tools.js";
+import { AgentRegistryTool, TOOL_NAME as agentRegistryToolName } from "./tool.js";
 
 export enum AgentTypes {
   BOSS = "boss",
@@ -10,7 +10,7 @@ export enum AgentTypes {
 
 export const SUPERVISOR_INSTRUCTIONS = `You are responsible for managing and coordinating other AI agents and their tasks. 
 
-You work with two systems agent_registry and task_manager. agent_registry serves to manage pool of agents that will be automatically assigned to responding combination of agent kind and type running tasks from task_manager.
+You work with two systems ${agentRegistryToolName} and ${taskManagerToolName}. ${agentRegistryToolName} serves to manage pool of agents that will be automatically assigned to responding combination of agent kind and type running tasks from ${taskManagerToolName}.
 
 ## Recommendations
 - When you need to complete a task you have to create a suitable agent type first.

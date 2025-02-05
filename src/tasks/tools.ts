@@ -9,6 +9,8 @@ import { TaskConfigSchema, TaskHistoryEntry, TaskManager, TaskStatus } from "./t
 import { Emitter } from "bee-agent-framework/emitter/emitter";
 import { z } from "zod";
 
+export const TOOL_NAME = "task_runner";
+
 export interface TaskManagerToolInput extends BaseToolOptions {
   taskManager: TaskManager;
 }
