@@ -1,6 +1,7 @@
-import { z } from "zod";
+import { FrameworkError } from "bee-agent-framework";
 import { Logger } from "bee-agent-framework/logger/logger";
 import { AgentKindSchema } from "src/agents/agent-registry.js";
+import { z } from "zod";
 
 export const TaskConfigSchema = z
   .object({
@@ -11,7 +12,9 @@ export const TaskConfigSchema = z
     runImmediately: z.boolean().describe("Whether to run the task immediately upon starting"),
     maxRetries: z
       .number()
-      .describe("Maximum number of retry attempts if task execution fails")
+      .describe(
+        "Maximum number of retry attempts if task execution fails. undefined if no retries.",
+      )
       .nullish(),
     retryDelayMs: z.number().describe("Delay between retry attempts in milliseconds").nullish(),
     ownerAgentId: z.string().describe("Identifier of who owns/manages this task"),
@@ -19,26 +22,50 @@ export const TaskConfigSchema = z
     agentType: z.string().describe("Agent type that is allowed to execute this task"),
     maxRuns: z
       .number()
-      .describe("Maximum number of times this task should execute. Undefined means infinite runs."),
+      .describe("Maximum number of times this task should execute. undefined if infinite runs.")
+      .nullish(),
   })
   .describe("Represents a periodic task configuration.");
 
 export type TaskConfig = z.infer<typeof TaskConfigSchema>;
 
+export const TaskTerminalStatusEnumSchema = z.enum(["STOPPED", "FAILED", "COMPLETED"]);
+export type TaskTerminalStatusEnum = z.infer<typeof TaskTerminalStatusEnumSchema>;
+
 export const TaskHistoryEntrySchema = z
   .object({
     timestamp: z.date().describe("When this task execution occurred"),
-    success: z.boolean().describe("Whether the execution was successful"),
+    terminalStatus: TaskTerminalStatusEnumSchema,
     output: z.unknown().describe("Output produced by the task callback"),
     error: z.string().optional().describe("Error message if execution failed"),
     runNumber: z.number().describe("Which run number this was (1-based)"),
-    retryCount: z.number().describe("How many retries were needed for this execution"),
+    maxRuns: z
+      .number()
+      .describe("Maximum number of times this task should execute. Undefined means infinite runs.")
+      .nullish(),
+    retryAttempt: z.number().describe("How many retries were needed for this execution"),
+    maxRetries: z
+      .number()
+      .describe(
+        "Maximum number of retry attempts if task execution fails. undefined if no retries.",
+      )
+      .nullish(),
     agentId: z.string().optional().describe("ID of agent that executed the task, if occupied"),
     executionTimeMs: z.number().describe("How long the task execution took in milliseconds"),
   })
   .describe("Records details about a single execution of a task");
 
 export type TaskHistoryEntry = z.infer<typeof TaskHistoryEntrySchema>;
+
+export const TaskStatusEnumSchema = z.enum([
+  "SCHEDULED",
+  "RUNNING",
+  "WAITING",
+  "STOPPED",
+  "FAILED",
+  "COMPLETED",
+]);
+export type TaskStatusEnum = z.infer<typeof TaskStatusEnumSchema>;
 
 // Update existing TaskStatus schema to include history
 export const TaskStatusSchema = z
@@ -47,11 +74,7 @@ export const TaskStatusSchema = z
       .string()
       .min(1, "Task ID cannot be empty")
       .describe("Unique identifier matching the corresponding AgentTask"),
-    isRunning: z
-      .boolean()
-      .describe(
-        "Indicates if the task is currently scheduled and actively running its periodic execution",
-      ),
+    status: TaskStatusEnumSchema.describe("The status of the task."),
     isOccupied: z
       .boolean()
       .describe("Indicates if the task is currently being operated on by an agent"),
@@ -62,6 +85,9 @@ export const TaskStatusSchema = z
     lastRunAt: z.date().optional().describe("Timestamp of the last successful execution"),
     nextRunAt: z.date().optional().describe("Expected timestamp of the next scheduled execution"),
     errorCount: z.number().int().describe("Count of consecutive execution failures"),
+    currentRetryAttempt: z
+      .number()
+      .describe("Current retry count. Maximum retries configured via maxRetries"),
     ownerAgentId: z.string().describe("ID of the agent who owns/manages this task"),
     currentAgentId: z
       .string()
@@ -71,7 +97,6 @@ export const TaskStatusSchema = z
       .number()
       .int()
       .describe("Number of times this task has been successfully executed"),
-    isCompleted: z.boolean().describe("Indicates if the task has reached its maximum allowed runs"),
     history: z.array(TaskHistoryEntrySchema).describe("History of task executions"),
     maxHistoryEntries: z
       .number()
@@ -81,6 +106,15 @@ export const TaskStatusSchema = z
   .describe("Represents the current status and execution state of a task");
 
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
+
+export const TaskSchema = z
+  .object({
+    id: z.string().describe("Unique identifier for the task"),
+    status: TaskStatusSchema,
+    config: TaskConfigSchema,
+  })
+  .describe("Represents a periodic task configuration.");
+export type Task = z.infer<typeof TaskSchema>;
 
 export class PermissionError extends Error {
   constructor(message: string) {
@@ -93,15 +127,33 @@ export class TaskManager {
   private readonly logger: Logger;
   private tasks = new Map<
     string,
-    {
+    Task & {
       intervalId: NodeJS.Timeout | null;
-      status: TaskStatus;
-      config: TaskConfig;
     }
   >();
+  private scheduledTasksToStart: { taskId: string; agentId: string }[] = [];
+  private taskStartIntervalId: NodeJS.Timeout | null = null;
 
   constructor(
-    private callback: (task: TaskConfig) => Promise<unknown>,
+    private onTaskStart: (
+      task: TaskConfig,
+      taskManager: TaskManager,
+      callbacks: {
+        onAgentCreate: (taskId: string, agentId: string, taskManage: TaskManager) => void;
+        onAgentComplete: (
+          output: string,
+          taskId: string,
+          agentId: string,
+          taskManage: TaskManager,
+        ) => void;
+        onAgentError: (
+          err: Error,
+          taskId: string,
+          agentId: string,
+          taskManage: TaskManager,
+        ) => void;
+      },
+    ) => Promise<unknown>,
     private options: {
       errorHandler?: (error: Error, taskId: string) => void;
       occupancyTimeoutMs?: number;
@@ -121,6 +173,14 @@ export class TaskManager {
       maxHistoryEntries: 100, // Default to keeping last 100 entries
       ...options,
     };
+
+    this.taskStartIntervalId = setInterval(async () => {
+      try {
+        await this.processNextStartTask(); // Your async function
+      } catch (err) {
+        this.logger.error("Process next start task error", err);
+      }
+    }, 100); // Runs every 100ms (0.1 second)
   }
 
   /**
@@ -153,7 +213,7 @@ export class TaskManager {
       limit?: number;
       startDate?: Date;
       endDate?: Date;
-      successOnly?: boolean;
+      status?: TaskTerminalStatusEnum;
     } = {},
   ): TaskHistoryEntry[] {
     this.logger.trace("Getting task history", { taskId, agentId, options });
@@ -178,8 +238,8 @@ export class TaskManager {
     if (options.endDate) {
       history = history.filter((entry) => entry.timestamp <= options.endDate!);
     }
-    if (options.successOnly) {
-      history = history.filter((entry) => entry.success);
+    if (options.status) {
+      history = history.filter((entry) => entry.terminalStatus === status);
     }
     if (options.limit) {
       history = history.slice(-options.limit);
@@ -219,7 +279,7 @@ export class TaskManager {
     }
 
     const hasPermission =
-      task.config.agentType === agentId || this.hasOwnerPermission(taskId, agentId);
+      agentId.includes(`:${task.config.agentType}[`) || this.hasOwnerPermission(taskId, agentId);
     this.logger.debug("Agent permission check result", { taskId, agentId, hasPermission });
     return hasPermission;
   }
@@ -249,16 +309,17 @@ export class TaskManager {
 
     const status: TaskStatus = {
       id: task.id,
-      isRunning: false,
+      status: "SCHEDULED",
+      currentRetryAttempt: 0,
       isOccupied: false,
       errorCount: 0,
       ownerAgentId: task.ownerAgentId,
       completedRuns: 0,
-      isCompleted: false,
       history: [],
     };
 
     this.tasks.set(task.id, {
+      id: task.id,
       intervalId: null,
       status,
       config: task,
@@ -268,10 +329,20 @@ export class TaskManager {
   }
 
   /**
-   * Starts a task.
+   * Schedule task to start as soon as possible.
    * Only owners and admins can start/stop tasks.
    */
-  async startTask(taskId: string, agentId: string): Promise<void> {
+  scheduleTaskStart(taskId: string, agentId: string): void {
+    this.logger.info("Schedule task start", { taskId, agentId });
+    this.scheduledTasksToStart.push({ taskId, agentId });
+  }
+
+  async processNextStartTask() {
+    if (!this.scheduledTasksToStart.length) {
+      return;
+    }
+    const { taskId, agentId } = this.scheduledTasksToStart.shift()!;
+
     this.logger.info("Starting task", { taskId, agentId });
 
     const task = this.tasks.get(taskId);
@@ -287,24 +358,27 @@ export class TaskManager {
       );
     }
 
-    if (task.status.isRunning) {
+    if (task.status.status === "RUNNING") {
       this.logger.warn("Task already running", { taskId });
       throw new Error(`Task ${taskId} is already running`);
     }
 
-    task.status.isRunning = true;
+    task.status.status = "RUNNING";
     task.status.nextRunAt = new Date(Date.now() + task.config.intervalMs);
 
     if (task.config.runImmediately) {
       this.logger.debug("Executing task immediately", { taskId });
+      // TODO Parallelism
       await this.executeTask(taskId);
     }
 
-    if (!task.status.isCompleted) {
+    if (!task.config.maxRuns || 1 < task.config.maxRuns) {
       this.logger.debug("Setting up task interval", { taskId, intervalMs: task.config.intervalMs });
+      const self = this;
       task.intervalId = setInterval(async () => {
-        await this.executeTask(taskId);
+        await self.executeTask(taskId);
       }, task.config.intervalMs);
+      task.status.status = "WAITING";
     }
 
     this.logger.info("Task started successfully", { taskId });
@@ -328,7 +402,7 @@ export class TaskManager {
       throw new Error(`Task ${taskId} not found`);
     }
 
-    if (!task.status.isRunning) {
+    if (task.status.status === "STOPPED") {
       this.logger.debug("Task already stopped", { taskId });
       return;
     }
@@ -339,7 +413,12 @@ export class TaskManager {
       task.intervalId = null;
     }
 
-    task.status.isRunning = false;
+    if (task.status.isOccupied) {
+      this.logger.debug("Releasing task occupancy before stop", { taskId });
+      this.releaseTaskOccupancy(taskId, agentId);
+    }
+
+    task.status.status = "STOPPED";
     task.status.nextRunAt = undefined;
     this.logger.info("Task stopped successfully", { taskId });
   }
@@ -364,7 +443,7 @@ export class TaskManager {
       throw new Error(`Task ${taskId} not found`);
     }
 
-    if (task.status.isRunning) {
+    if (task.status.status === "RUNNING") {
       this.logger.debug("Stopping running task before removal", { taskId });
       this.stopTask(taskId, agentId);
     }
@@ -462,6 +541,27 @@ export class TaskManager {
   }
 
   /**
+   * Update task status
+   */
+  updateTaskStatus(
+    taskId: string,
+    agentId: string,
+    update: Partial<
+      Pick<TaskStatus, "status" | "errorCount" | "completedRuns" | "lastRunAt" | "nextRunAt">
+    >,
+  ) {
+    this.logger.trace("Updating task status", { taskId, agentId, update });
+    const status = this.getTaskStatus(taskId, agentId);
+    status.errorCount = update.errorCount ?? status.errorCount;
+    status.completedRuns = update.completedRuns ?? status.completedRuns;
+    status.status = update.status ?? status.status;
+    status.lastRunAt = update.lastRunAt ?? status.lastRunAt;
+    status.nextRunAt = update.nextRunAt ?? status.nextRunAt;
+
+    return status;
+  }
+
+  /**
    * Gets all task statuses visible to the agent.
    */
   getAllTaskStatuses(agentId: string): TaskStatus[] {
@@ -499,8 +599,8 @@ export class TaskManager {
    * Executes a task with retry logic and records history.
    * @private
    */
-  private async executeTask(taskId: string, retryCount = 0): Promise<void> {
-    this.logger.debug("Executing task", { taskId, retryCount });
+  private async executeTask(taskId: string): Promise<void> {
+    this.logger.debug("Executing task", { taskId });
 
     const task = this.tasks.get(taskId);
     if (!task) {
@@ -508,97 +608,135 @@ export class TaskManager {
       return;
     }
 
-    if (task.status.isCompleted || task.status.isOccupied) {
+    const retryAttempt = task.status.currentRetryAttempt;
+    if (retryAttempt > 0) {
+      this.logger.debug("Retry attempt", { retryAttempt, maxRetries: task.config.maxRetries });
+      if (!!task.config.maxRetries && retryAttempt >= task.config.maxRetries) {
+        this.logger.warn("Last retry attempt", { taskId });
+      }
+    }
+
+    if (task.status.status === "COMPLETED" || task.status.isOccupied) {
       this.logger.debug("Skipping task execution", {
         taskId,
-        reason: task.status.isCompleted ? "completed" : "occupied",
+        reason: task.status.status === "COMPLETED" ? "completed" : "occupied",
       });
       return;
     }
 
     const startTime = Date.now();
-    let success = false;
-    let output: unknown;
-    let error: string | undefined;
 
-    try {
-      task.status.lastRunAt = new Date();
-      task.status.nextRunAt = new Date(Date.now() + task.config.intervalMs);
+    task.status.lastRunAt = new Date();
+    task.status.nextRunAt = new Date(Date.now() + task.config.intervalMs);
 
-      this.logger.debug("Executing task callback", {
-        taskId,
-        lastRunAt: task.status.lastRunAt,
-        nextRunAt: task.status.nextRunAt,
-      });
+    this.logger.debug("Executing task callback", {
+      taskId,
+      lastRunAt: task.status.lastRunAt,
+      nextRunAt: task.status.nextRunAt,
+    });
 
-      output = await this.callback(task.config);
-      success = true;
+    // TODO Parallelism
+    await this.onTaskStart(task.config, this, {
+      onAgentCreate(taskId, agentId, taskManager) {
+        taskManager.setTaskOccupied(taskId, agentId);
+      },
+      onAgentComplete(output, taskId, agentId, taskManager) {
+        const status = taskManager.getTaskStatus(taskId, agentId);
+        taskManager.updateTaskStatus(taskId, agentId, {
+          completedRuns: status.completedRuns + 1,
+        });
 
-      task.status.errorCount = 0;
-      task.status.completedRuns++;
+        // Record history entry
+        taskManager.addHistoryEntry(taskId, {
+          timestamp: new Date(),
+          terminalStatus: "COMPLETED",
+          output,
+          runNumber: task.status.completedRuns,
+          maxRuns: task.config.maxRuns,
+          retryAttempt: status.currentRetryAttempt,
+          maxRetries: task.config.maxRetries,
+          agentId: task.status.currentAgentId,
+          executionTimeMs: Date.now() - startTime,
+        });
 
-      this.logger.debug("Task executed successfully", {
-        taskId,
-        completedRuns: task.status.completedRuns,
-        maxRuns: task.config.maxRuns,
-      });
-
-      // Check if we've reached maxRuns
-      if (task.config.maxRuns && task.status.completedRuns >= task.config.maxRuns) {
-        task.status.isCompleted = true;
-        this.stopTask(taskId, task.config.ownerAgentId);
-        this.logger.info("Task reached maximum runs and has been stopped", {
+        taskManager.logger.debug("Task executed successfully", {
           taskId,
           completedRuns: task.status.completedRuns,
           maxRuns: task.config.maxRuns,
         });
-      }
-    } catch (err) {
-      task.status.errorCount++;
-      error = err instanceof Error ? err.message : String(err);
 
-      this.logger.error("Task execution failed", {
-        taskId,
-        retryCount,
-        maxRetries: task.config.maxRetries,
-        errorCount: task.status.errorCount,
-        error,
-      });
+        taskManager.releaseTaskOccupancy(taskId, agentId);
+        // Check if we've reached maxRuns
+        if (task.config.maxRuns && task.status.completedRuns >= task.config.maxRuns) {
+          task.status.status = "COMPLETED";
+          taskManager.stopTask(taskId, task.config.ownerAgentId);
+          taskManager.logger.info("Task reached maximum runs and has been stopped", {
+            taskId,
+            completedRuns: task.status.completedRuns,
+            maxRuns: task.config.maxRuns,
+          });
+        }
+      },
+      async onAgentError(err, taskId, agentId, taskManager) {
+        let error;
+        if (err instanceof FrameworkError) {
+          error = err.explain();
+        } else {
+          error = err instanceof Error ? err.message : String(err);
+        }
 
-      if (this.options.errorHandler) {
-        this.options.errorHandler(err as Error, taskId);
-      }
+        const status = taskManager.getTaskStatus(taskId, agentId);
+        taskManager.updateTaskStatus(taskId, agentId, {
+          errorCount: status.errorCount + 1,
+          completedRuns: task.status.completedRuns + 1,
+        });
+        const retryAttempt = status.currentRetryAttempt;
 
-      if (retryCount < (task.config.maxRetries ?? 0)) {
-        const retryDelay = task.config.retryDelayMs ?? 0;
-        this.logger.debug("Retrying task execution", {
-          taskId,
-          retryCount,
-          nextRetryDelay: retryDelay,
+        // Record history entry
+        taskManager.addHistoryEntry(taskId, {
+          timestamp: new Date(),
+          terminalStatus: "FAILED",
+          error,
+          runNumber: task.status.completedRuns,
+          maxRuns: task.config.maxRuns,
+          retryAttempt,
+          maxRetries: task.config.maxRetries,
+          agentId: task.status.currentAgentId,
+          executionTimeMs: Date.now() - startTime,
         });
 
-        await new Promise((resolve) => setTimeout(resolve, retryDelay));
-        await this.executeTask(taskId, retryCount + 1);
-        return; // Don't record history for failed attempts that will be retried
-      } else {
-        this.logger.warn("Task exceeded maximum retry attempts", {
+        taskManager.logger.error(`Task execution failed ${error}`, {
           taskId,
+          runNumber: task.status.completedRuns,
+          maxRuns: task.config.maxRuns,
+          retryAttempt,
           maxRetries: task.config.maxRetries,
           errorCount: task.status.errorCount,
+          error,
         });
-      }
-    }
 
-    // Record history entry
-    this.addHistoryEntry(taskId, {
-      timestamp: new Date(),
-      success,
-      output,
-      error,
-      runNumber: task.status.completedRuns,
-      retryCount,
-      agentId: task.status.currentAgentId,
-      executionTimeMs: Date.now() - startTime,
+        if (taskManager.options.errorHandler) {
+          taskManager.options.errorHandler(err as Error, taskId);
+        }
+
+        taskManager.logger.debug("Releasing task occupancy before removal", { taskId });
+        taskManager.releaseTaskOccupancy(taskId, agentId);
+        if (task.config.maxRetries) {
+          if (retryAttempt >= task.config.maxRetries) {
+            taskManager.stopTask(taskId, task.config.ownerAgentId);
+          } else {
+            status.currentRetryAttempt = retryAttempt + 1;
+          }
+        }
+      },
     });
+  }
+
+  destroy() {
+    this.logger.debug("Destroy");
+    if (this.taskStartIntervalId) {
+      clearInterval(this.taskStartIntervalId);
+      this.taskStartIntervalId = null;
+    }
   }
 }

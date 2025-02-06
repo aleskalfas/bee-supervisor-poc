@@ -1,3 +1,4 @@
+import { Emitter } from "bee-agent-framework/emitter/emitter";
 import {
   BaseToolOptions,
   JSONToolOutput,
@@ -5,9 +6,10 @@ import {
   ToolEmitter,
   ToolInput,
 } from "bee-agent-framework/tools/base";
-import { TaskConfigSchema, TaskHistoryEntry, TaskManager, TaskStatus } from "./task-manager.js";
-import { Emitter } from "bee-agent-framework/emitter/emitter";
 import { z } from "zod";
+import { TaskConfigSchema, TaskHistoryEntry, TaskManager, TaskStatus } from "./task-manager.js";
+
+export const TOOL_NAME = "task_runner";
 
 export interface TaskManagerToolInput extends BaseToolOptions {
   taskManager: TaskManager;
@@ -75,22 +77,6 @@ export const GetAllTaskStatusesSchema = z
   })
   .describe("Gets status of all accessible tasks. Requires agent permissions.");
 
-export const SetTaskOccupiedSchema = z
-  .object({
-    method: z.literal("setTaskOccupied"),
-    taskId: z.string(),
-    supervisorAgentId: z.string(),
-  })
-  .describe("Marks a task as occupied by an agent. Requires agent permissions.");
-
-export const ReleaseTaskOccupancySchema = z
-  .object({
-    method: z.literal("releaseTaskOccupancy"),
-    taskId: z.string(),
-    supervisorAgentId: z.string(),
-  })
-  .describe("Releases task occupancy. Requires current agent or owner permissions.");
-
 export const IsTaskOccupiedSchema = z
   .object({
     method: z.literal("isTaskOccupied"),
@@ -148,8 +134,6 @@ export class TaskManagerTool extends Tool<
       RemoveTaskSchema,
       GetTaskStatusSchema,
       GetAllTaskStatusesSchema,
-      SetTaskOccupiedSchema,
-      ReleaseTaskOccupancySchema,
       IsTaskOccupiedSchema,
       GetTaskHistorySchema,
     ]);
@@ -162,7 +146,7 @@ export class TaskManagerTool extends Tool<
         data = this.taskManager.scheduleTask(input.task, input.supervisorAgentId);
         break;
       case "startTask":
-        this.taskManager.startTask(input.taskId, input.supervisorAgentId);
+        this.taskManager.scheduleTaskStart(input.taskId, input.supervisorAgentId);
         data = true;
         break;
       case "stopTask":
@@ -176,12 +160,6 @@ export class TaskManagerTool extends Tool<
         break;
       case "getAllTaskStatuses":
         data = this.taskManager.getAllTaskStatuses(input.supervisorAgentId);
-        break;
-      case "setTaskOccupied":
-        data = this.taskManager.setTaskOccupied(input.taskId, input.supervisorAgentId);
-        break;
-      case "releaseTaskOccupancy":
-        data = this.taskManager.releaseTaskOccupancy(input.taskId, input.supervisorAgentId);
         break;
       case "isTaskOccupied":
         data = this.taskManager.isTaskOccupied(input.taskId, input.supervisorAgentId);
