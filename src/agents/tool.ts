@@ -12,6 +12,7 @@ import {
   AgentConfig,
   AgentConfigSchema,
   AgentInstanceRef,
+  AgentKindSchema,
   AgentRegistry,
   AvailableTool,
   PoolStats,
@@ -43,15 +44,19 @@ export interface AgentRegistryToolResult {
 export const GetAvailableToolsSchema = z
   .object({
     method: z.literal("getAvailableTools"),
+    agentKind: AgentKindSchema.describe("Kind of agent is mandatory."),
   })
   .describe("Get all available tools usable in agents");
 
 export const RegisterAgentTypeSchema = z
   .object({
     method: z.literal("registerAgentType"),
-    config: AgentConfigSchema,
+    agentKind: z.literal(AgentKindSchema.Enum.operator),
+    config: AgentConfigSchema.omit({
+      kind: true,
+    }),
   })
-  .describe("Register a new agent type with its configuration");
+  .describe("Register a new agent type with its configuration.");
 
 export const GetAgentTypesSchema = z
   .object({
@@ -62,23 +67,10 @@ export const GetAgentTypesSchema = z
 export const GetAgentTypeConfigSchema = z
   .object({
     method: z.literal("getAgentTypeConfig"),
+    agentKind: AgentKindSchema,
     type: z.string(),
   })
   .describe("Get configuration for a specific agent type");
-
-export const AcquireAgentSchema = z
-  .object({
-    method: z.literal("acquireAgent"),
-    type: z.string(),
-  })
-  .describe("Acquire an agent instance from the pool or create a new one");
-
-export const ReleaseAgentSchema = z
-  .object({
-    method: z.literal("releaseAgent"),
-    agentId: z.string(),
-  })
-  .describe("Release an agent back to the pool or destroy it");
 
 export const DestroyAgentSchema = z
   .object({
@@ -103,6 +95,7 @@ export const GetAgentSchema = z
 export const GetPoolStatsSchema = z
   .object({
     method: z.literal("getPoolStats"),
+    agentKind: AgentKindSchema,
     type: z.string(),
   })
   .describe("Get statistics about the agent pool for a specific type");
@@ -142,8 +135,6 @@ export class AgentRegistryTool extends Tool<
       RegisterAgentTypeSchema,
       GetAgentTypesSchema,
       GetAgentTypeConfigSchema,
-      AcquireAgentSchema,
-      ReleaseAgentSchema,
       DestroyAgentSchema,
       GetActiveAgentsSchema,
       GetAgentSchema,
@@ -155,35 +146,30 @@ export class AgentRegistryTool extends Tool<
     let data: AgentRegistryToolResultData;
     switch (input.method) {
       case "getAvailableTools":
-        data = this.registry.getToolsFactory("operator").getAvailableTools();
+        data = this.registry.getToolsFactory(input.agentKind).getAvailableTools();
         break;
       case "registerAgentType":
-        data = this.registry.registerAgentType(input.config);
+        data = this.registry.registerAgentType({ ...input.config, kind: input.agentKind });
         break;
       case "getAgentTypes":
         data = this.registry.getAgentTypes();
         break;
       case "getAgentTypeConfig":
-        data = this.registry.getAgentTypeConfig("operator", input.type);
-        break;
-      case "acquireAgent":
-        data = await this.registry.acquireAgent("operator", input.type);
-        data = { ...data, instance: undefined };
-        break;
-      case "releaseAgent":
-        data = await this.registry.releaseAgent(input.agentId);
+        data = this.registry.getAgentTypeConfig(input.agentKind, input.type);
         break;
       case "destroyAgent":
         data = await this.registry.destroyAgent(input.agentId);
         break;
       case "getActiveAgents":
         data = this.registry.getActiveAgents();
+        data = data.map((it) => ({ ...it, instance: undefined }));
         break;
       case "getAgent":
         data = this.registry.getAgent(input.agentId);
+        data = { ...data, instance: undefined };
         break;
       case "getPoolStats":
-        data = this.registry.getPoolStats("operator", input.type);
+        data = this.registry.getPoolStats(input.agentKind, input.type);
         break;
     }
     return new JSONToolOutput({

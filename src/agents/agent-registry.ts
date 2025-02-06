@@ -24,7 +24,7 @@ export const AgentConfigSchema = z.object({
     .array(z.string())
     .nullish()
     .describe(
-      "List of tool identifiers that this agent type can utilize. Null/undefined means all available.",
+      "List of tool identifiers that this agent type can utilize. Null/undefined means all available. Empty array means no tools.",
     ),
   maxPoolSize: z
     .number()
@@ -45,7 +45,7 @@ export type AgentConfig = z.infer<typeof AgentConfigSchema>;
  */
 export const AgentSchema = z.object({
   /** Unique identifier for this specific agent instance */
-  id: z.string(),
+  agentId: z.string(),
   /** The type of agent this instance represents */
   type: z.string(),
   kind: AgentKindSchema,
@@ -59,6 +59,9 @@ export const AgentSchema = z.object({
   instance: z.any(),
 });
 export type Agent = z.infer<typeof AgentSchema>;
+export type AgentWithInstance<TAgentInstance> = Omit<Agent, "instance"> & {
+  instance: TAgentInstance;
+};
 
 /**
  * Schema for an available tool.
@@ -99,13 +102,13 @@ export interface AgentLifecycleCallbacks<TAgentInstance> {
    * @param config - Configuration for the agent
    * @param poolStats - Statistics of the agent pool
    * @param toolsFactory - Factory to create tools
-   * @returns Promise resolving to the new agent's ID
+   * @returns Promise resolving to the new agent's id and instance
    */
   onCreate: (
     config: AgentConfig,
     poolStats: PoolStats,
     toolsFactory: BaseToolsFactory,
-  ) => Promise<{ id: string; instance: TAgentInstance }>;
+  ) => Promise<{ agentId: string; instance: TAgentInstance }>;
 
   /**
    * Called when an agent is being destroyed
@@ -135,13 +138,6 @@ export interface AgentInstanceRef<TInstance> {
   instance: TInstance;
 }
 
-function ref<TAgentInstance>(
-  agentId: string,
-  instance: TAgentInstance,
-): AgentInstanceRef<TAgentInstance> {
-  return { agentId, instance };
-}
-
 /**
  * Registry for managing agent types, instances, and pools.
  * Provides functionality for:
@@ -158,12 +154,10 @@ export class AgentRegistry<TAgentInstance> {
   private readonly logger: Logger;
   /** Map of registered agent kind and their configurations */
   private agentConfigs: Map<AgentKind, AgentConfigMap>;
-  /** Map of all active agent instances */
-  private activeAgents = new Map<string, Agent>();
+  /** Map of all agent instances */
+  private agents = new Map<string, Agent>();
   /** Map of agent pools by kind and type, containing sets of available agent IDs */
   private agentPools: Map<AgentKind, AgentTypePoolMap>;
-  /** Map of agent instances available by agent IDs */
-  private agentInstances = new Map<string, TAgentInstance>();
   /** Callbacks for agent lifecycle events */
   private callbacks: AgentLifecycleCallbacks<TAgentInstance>;
   /** Maps of tools factories for use by agents per agent kinds */
@@ -249,7 +243,7 @@ export class AgentRegistry<TAgentInstance> {
 
     const toolsFactory = this.getToolsFactory(config.kind);
     const availableTools = toolsFactory.getAvailableTools();
-    if (config.tools) {
+    if (config.tools?.filter((it) => !!it.length).length) {
       const undefinedTools = config.tools.filter(
         (tool) => !availableTools.some((at) => at.name === tool),
       );
@@ -314,7 +308,8 @@ export class AgentRegistry<TAgentInstance> {
     });
 
     for (let i = 0; i < needed; i++) {
-      const { agentId: agentId } = await this.createAgent(kind, type, true);
+      const agent = await this.createAgent(kind, type, true);
+      const { agentId } = agent;
       pool.add(agentId);
       this.logger.trace("Added agent to pool", { kind, type, agentId });
     }
@@ -353,7 +348,7 @@ export class AgentRegistry<TAgentInstance> {
    * @returns Promise resolving to the agent ID
    * @throws Error if no agents are available and pool is at capacity
    */
-  async acquireAgent(kind: AgentKind, type: string): Promise<AgentInstanceRef<TAgentInstance>> {
+  async acquireAgent(kind: AgentKind, type: string): Promise<AgentWithInstance<TAgentInstance>> {
     this.logger.debug("Attempting to acquire agent", { type });
     const config = this.getAgentTypeConfig(kind, type);
     const pool = this.getAgentPoolMap(kind, type);
@@ -365,7 +360,7 @@ export class AgentRegistry<TAgentInstance> {
 
     // Try to get an available agent from the pool
     for (const agentId of pool) {
-      const agent = this.activeAgents.get(agentId);
+      const agent = this.agents.get(agentId);
       if (agent && !agent.inUse) {
         pool.delete(agentId);
         agent.inUse = true;
@@ -377,7 +372,7 @@ export class AgentRegistry<TAgentInstance> {
           await this.callbacks.onAcquire(agentId);
         }
 
-        return ref(agentId, agent.instance);
+        return agent as AgentWithInstance<TAgentInstance>;
       }
     }
 
@@ -406,7 +401,7 @@ export class AgentRegistry<TAgentInstance> {
    */
   async releaseAgent(agentId: string): Promise<void> {
     this.logger.debug("Attempting to release agent", { agentId });
-    const agent = this.activeAgents.get(agentId);
+    const agent = this.agents.get(agentId);
     if (!agent) {
       this.logger.error("Agent not found for release", { agentId });
       throw new Error(`Agent with ID '${agentId}' not found`);
@@ -443,28 +438,25 @@ export class AgentRegistry<TAgentInstance> {
     kind: AgentKind,
     type: string,
     forPool: boolean,
-  ): Promise<AgentInstanceRef<TAgentInstance>> {
+  ): Promise<AgentWithInstance<TAgentInstance>> {
     this.logger.debug("Creating new agent", { kind, type, forPool });
     const config = this.getAgentTypeConfig(kind, type);
     const poolStats = this.getPoolStats(kind, type);
     const toolsFactory = this.getToolsFactory(kind);
-    const { id: agentId, instance } = await this.callbacks.onCreate(
-      config,
-      poolStats,
-      toolsFactory,
-    );
+    const { agentId, instance } = await this.callbacks.onCreate(config, poolStats, toolsFactory);
 
-    this.activeAgents.set(agentId, {
-      id: agentId,
+    const agent = {
+      agentId,
       kind,
       type,
       config,
       inUse: !forPool,
       instance,
-    });
+    } satisfies Agent;
+    this.agents.set(agentId, agent);
 
     this.logger.info("Agent created successfully", { agentId, type, forPool });
-    return ref(agentId, instance);
+    return agent;
   }
 
   /**
@@ -474,7 +466,7 @@ export class AgentRegistry<TAgentInstance> {
    */
   async destroyAgent(agentId: string): Promise<void> {
     this.logger.debug("Attempting to destroy agent", { agentId });
-    const agent = this.activeAgents.get(agentId);
+    const agent = this.agents.get(agentId);
     if (!agent) {
       this.logger.error("Agent not found for destruction", { agentId });
       throw new Error(`Agent with ID '${agentId}' not found`);
@@ -488,7 +480,7 @@ export class AgentRegistry<TAgentInstance> {
     }
 
     await this.callbacks.onDestroy(agent.instance);
-    this.activeAgents.delete(agentId);
+    this.agents.delete(agentId);
     this.logger.info("Agent destroyed successfully", {
       agentId,
       kind: agent.kind,
@@ -502,7 +494,7 @@ export class AgentRegistry<TAgentInstance> {
    */
   getActiveAgents(): Agent[] {
     this.logger.trace("Getting active agents");
-    return Array.from(this.activeAgents.values());
+    return Array.from(this.agents.values()).filter((a) => a.inUse);
   }
 
   /**
@@ -513,7 +505,7 @@ export class AgentRegistry<TAgentInstance> {
    */
   getAgent(agentId: string): Agent {
     this.logger.trace("Getting agent by ID", { agentId });
-    const agent = this.activeAgents.get(agentId);
+    const agent = this.agents.get(agentId);
     if (!agent) {
       this.logger.error("Agent not found", { agentId });
       throw new Error(`Agent with ID '${agentId}' not found`);
@@ -535,9 +527,7 @@ export class AgentRegistry<TAgentInstance> {
       return { poolSize: 0, available: 0, inUse: 0, created: 0 };
     }
 
-    const available = Array.from(pool).filter(
-      (agentId) => !this.activeAgents.get(agentId)?.inUse,
-    ).length;
+    const available = Array.from(pool).filter((agentId) => !this.agents.get(agentId)?.inUse).length;
 
     const stats = {
       poolSize: config.maxPoolSize,

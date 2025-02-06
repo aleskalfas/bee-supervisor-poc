@@ -4,25 +4,26 @@ import "dotenv/config.js";
 
 import { createAgent } from "./agents/agent-factory.js";
 import { AgentKindSchema, AgentRegistry } from "./agents/agent-registry.js";
+import * as operator from "./agents/operator.js";
+import * as supervisor from "./agents/supervisor.js";
 import { createConsoleReader } from "./helpers/reader.js";
 import { TaskManager } from "./tasks/task-manager.js";
-import * as supervisor from "./agents/supervisor.js";
-import * as operator from "./agents/operator.js";
 
 const registry = new AgentRegistry<BeeAgent>({
   async onCreate(
-    { kind, tools, type, instructions, description },
+    config,
     poolStats,
     toolsFactory,
-  ): Promise<{ id: string; instance: BeeAgent }> {
+  ): Promise<{ agentId: string; instance: BeeAgent }> {
+    const { kind: agentKind, type: agentType, instructions, description } = config;
     const num = poolStats.created + 1;
-    const id = `${kind}:${type}[${num}]`;
-    tools = tools == null ? toolsFactory.getAvailableToolsNames() : tools;
+    const agentId = `${agentKind}:${agentType}[${num}]`;
+    const tools = config.tools == null ? toolsFactory.getAvailableToolsNames() : config.tools;
     const instance = createAgent(
       {
-        agentKind: kind,
-        agentType: type,
-        agentId: id,
+        agentKind,
+        agentType,
+        agentId,
         description,
         instructions,
         tools,
@@ -30,28 +31,51 @@ const registry = new AgentRegistry<BeeAgent>({
       toolsFactory,
     );
 
-    return { id, instance };
+    return { agentId, instance };
   },
   async onDestroy(instance) {
     instance.destroy();
   },
 });
 
-const taskManager = new TaskManager(async (task) => {
-  const { instance: agent } = await registry.acquireAgent(task.agentKind, task.agentType);
-  const prompt = task.input;
-  const resp = await agent.run(
-    { prompt },
-    {
-      execution: {
-        maxIterations: 8,
-        maxRetriesPerStep: 2,
-        totalMaxRetries: 10,
-      },
-    },
-  );
-  return resp.result.text;
-});
+const taskManager = new TaskManager(
+  async (task, taskManager, { onAgentCreate, onAgentComplete, onAgentError }) => {
+    const agent = await registry.acquireAgent(task.agentKind, task.agentType);
+    onAgentCreate(task.id, agent.agentId, taskManager);
+    const { instance } = agent;
+    const prompt = task.input;
+    instance
+      .run(
+        { prompt },
+        {
+          execution: {
+            maxIterations: 8,
+            maxRetriesPerStep: 2,
+            totalMaxRetries: 10,
+          },
+        },
+      )
+      .observe((emitter) => {
+        emitter.on("update", (data, meta) => {
+          reader.write(
+            `${(meta.creator as any).input.meta.name} 🤖 (${data.update.key}) :`,
+            data.update.value,
+          );
+        });
+        emitter.on("error", (data, meta) => {
+          reader.write(
+            `${(meta.creator as any).input.meta.name} 🤖 (${data.error.name}) :`,
+            data.error.message,
+          );
+        });
+      })
+      .then((resp) => onAgentComplete(resp.result.text, task.id, agent.agentId, taskManager))
+      .catch((err) => onAgentError(err, task.id, agent.agentId, taskManager))
+      .finally(async () => {
+        await registry.releaseAgent(agent.agentId);
+      });
+  },
+);
 
 registry.registerToolsFactories([
   ["supervisor", new supervisor.ToolsFactory(registry, taskManager)],
@@ -67,7 +91,7 @@ registry.registerAgentType({
   maxPoolSize: 1,
 });
 
-const { instance: supervisorAgent, agentId: supervisorAgentId } = await registry.acquireAgent(
+const { instance: supervisorAgent } = await registry.acquireAgent(
   AgentKindSchema.Enum.supervisor,
   supervisor.AgentTypes.BOSS,
 );
@@ -81,7 +105,7 @@ const { instance: supervisorAgent, agentId: supervisorAgentId } = await registry
 // Can you runt these tasks?
 // Can you list their results?
 
-// Can you create poems on each of these topics: night, sky, fall, love, hate?
+// Can you generate poem for each of these topics: love, day, night?
 // Can you get list of articles about each of these topics: deepseek, interstellar engine, agi?
 
 const reader = createConsoleReader({ fallback: "What is the current weather in Las Vegas?" });
@@ -90,11 +114,7 @@ for await (const { prompt } of reader) {
     const response = await supervisorAgent
       .run(
         {
-          prompt: `# State
-- Active agents: ${JSON.stringify(registry.getActiveAgents().map(({ id, kind, type, inUse }) => ({ id, kind, type, inUse })))}
-- Active tasks: ${JSON.stringify(taskManager.getAllTaskStatuses(supervisorAgentId).map(({ id, isRunning, isOccupied, isCompleted, nextRunAt, lastRunAt, ownerAgentId, currentAgentId, occupiedSince }) => ({ id, isRunning, isOccupied, isCompleted, nextRunAt, lastRunAt, ownerAgentId, currentAgentId, occupiedSince })))}
-
-${prompt}`,
+          prompt,
         },
         {
           execution: {

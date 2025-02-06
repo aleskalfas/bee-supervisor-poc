@@ -34,7 +34,7 @@ export function createAgent<TInput extends BaseCreateAgentInput>(
         templates: {
           system: (template) =>
             template.fork((config) => {
-              config.defaults.instructions = `${supervisor.SUPERVISOR_INSTRUCTIONS}\n\n${generalInstructions}`;
+              config.defaults.instructions = `${supervisor.SUPERVISOR_INSTRUCTIONS(input.agentKind, input.agentType, input.agentId)}\n\n${generalInstructions}`;
             }),
         },
       });
