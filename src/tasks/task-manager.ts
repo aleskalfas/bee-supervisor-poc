@@ -1,6 +1,8 @@
 import { FrameworkError } from "bee-agent-framework";
 import { Logger } from "bee-agent-framework/logger/logger";
 import { AgentKindSchema } from "src/agents/agent-registry.js";
+import { getTaskStateLogger } from "src/tasks/task-state-logger.js";
+import { updateDeepPartialObject } from "src/utils/objects.js";
 import { z } from "zod";
 
 export const TaskConfigSchema = z
@@ -64,6 +66,7 @@ export const TaskStatusEnumSchema = z.enum([
   "STOPPED",
   "FAILED",
   "COMPLETED",
+  "REMOVED",
 ]);
 export type TaskStatusEnum = z.infer<typeof TaskStatusEnumSchema>;
 
@@ -81,7 +84,9 @@ export const TaskStatusSchema = z
     occupiedSince: z
       .date()
       .optional()
+      .nullable()
       .describe("Timestamp when the task was marked as occupied. undefined if not occupied"),
+    startRunAt: z.date().optional().describe("Timestamp of the execution start."),
     lastRunAt: z.date().optional().describe("Timestamp of the last successful execution"),
     nextRunAt: z.date().optional().describe("Expected timestamp of the next scheduled execution"),
     errorCount: z.number().int().describe("Count of consecutive execution failures"),
@@ -92,6 +97,7 @@ export const TaskStatusSchema = z
     currentAgentId: z
       .string()
       .optional()
+      .nullable()
       .describe("ID of the agent currently operating on the task. undefined if not occupied"),
     completedRuns: z
       .number()
@@ -131,6 +137,7 @@ export class TaskManager {
       intervalId: NodeJS.Timeout | null;
     }
   >();
+  private removedTasks: Task[] = [];
   private scheduledTasksToStart: { taskId: string; agentId: string }[] = [];
   private taskStartIntervalId: NodeJS.Timeout | null = null;
 
@@ -192,6 +199,7 @@ export class TaskManager {
     if (!task) {
       return;
     }
+    getTaskStateLogger().logHistoryEntry(taskId, entry);
 
     task.status.history.push(entry);
 
@@ -318,12 +326,16 @@ export class TaskManager {
       history: [],
     };
 
+    getTaskStateLogger().logStatusChange(status.id, status);
+
     this.tasks.set(task.id, {
       id: task.id,
       intervalId: null,
       status,
       config: task,
     });
+
+    getTaskStateLogger().logConfigCreate(task.id, task);
 
     this.logger.info("Task scheduled successfully", { taskId: task.id });
   }
@@ -350,6 +362,7 @@ export class TaskManager {
       this.logger.error("Task not found", { taskId });
       throw new Error(`Task ${taskId} not found`);
     }
+    const { status } = task;
 
     if (!this.hasOwnerPermission(taskId, agentId)) {
       this.logger.error("Permission denied for starting task", { taskId, agentId });
@@ -358,17 +371,18 @@ export class TaskManager {
       );
     }
 
-    if (task.status.status === "RUNNING") {
+    if (status.status === "RUNNING") {
       this.logger.warn("Task already running", { taskId });
       throw new Error(`Task ${taskId} is already running`);
     }
 
-    task.status.status = "RUNNING";
-    task.status.nextRunAt = new Date(Date.now() + task.config.intervalMs);
+    this._updateTaskStatus(taskId, status, {
+      status: "RUNNING",
+      nextRunAt: new Date(Date.now() + task.config.intervalMs),
+    });
 
     if (task.config.runImmediately) {
       this.logger.debug("Executing task immediately", { taskId });
-      // TODO Parallelism
       await this.executeTask(taskId);
     }
 
@@ -378,7 +392,12 @@ export class TaskManager {
       task.intervalId = setInterval(async () => {
         await self.executeTask(taskId);
       }, task.config.intervalMs);
-      task.status.status = "WAITING";
+
+      status.status = "WAITING";
+
+      this._updateTaskStatus(taskId, status, {
+        status: "WAITING",
+      });
     }
 
     this.logger.info("Task started successfully", { taskId });
@@ -388,7 +407,7 @@ export class TaskManager {
    * Stops a task.
    * Only owners and admins can start/stop tasks.
    */
-  stopTask(taskId: string, agentId: string): void {
+  stopTask(taskId: string, agentId: string, isCompleted = false): void {
     this.logger.info("Stopping task", { taskId, agentId });
 
     if (!this.hasOwnerPermission(taskId, agentId)) {
@@ -401,8 +420,9 @@ export class TaskManager {
       this.logger.error("Task not found", { taskId });
       throw new Error(`Task ${taskId} not found`);
     }
+    const { status } = task;
 
-    if (task.status.status === "STOPPED") {
+    if (status.status === "STOPPED") {
       this.logger.debug("Task already stopped", { taskId });
       return;
     }
@@ -413,13 +433,15 @@ export class TaskManager {
       task.intervalId = null;
     }
 
-    if (task.status.isOccupied) {
+    if (status.isOccupied) {
       this.logger.debug("Releasing task occupancy before stop", { taskId });
       this.releaseTaskOccupancy(taskId, agentId);
     }
 
-    task.status.status = "STOPPED";
-    task.status.nextRunAt = undefined;
+    this._updateTaskStatus(taskId, status, {
+      status: isCompleted ? "COMPLETED" : "STOPPED",
+      nextRunAt: undefined,
+    });
     this.logger.info("Task stopped successfully", { taskId });
   }
 
@@ -442,18 +464,21 @@ export class TaskManager {
       this.logger.error("Task not found", { taskId });
       throw new Error(`Task ${taskId} not found`);
     }
+    const { status } = task;
 
-    if (task.status.status === "RUNNING") {
+    if (status.status === "RUNNING") {
       this.logger.debug("Stopping running task before removal", { taskId });
       this.stopTask(taskId, agentId);
     }
 
-    if (task.status.isOccupied) {
+    if (status.isOccupied) {
       this.logger.debug("Releasing task occupancy before removal", { taskId });
       this.releaseTaskOccupancy(taskId, agentId);
     }
 
+    this._updateTaskStatus(taskId, status, { status: "REMOVED" });
     this.tasks.delete(taskId);
+    this.removedTasks.push(task);
     this.logger.info("Task removed successfully", { taskId });
   }
 
@@ -474,10 +499,13 @@ export class TaskManager {
       this.logger.debug("Task not available for occupancy", { taskId, exists: !!task });
       return false;
     }
+    const { status } = task;
 
-    task.status.isOccupied = true;
-    task.status.occupiedSince = new Date();
-    task.status.currentAgentId = agentId;
+    this._updateTaskStatus(taskId, status, {
+      isOccupied: true,
+      occupiedSince: new Date(),
+      currentAgentId: agentId,
+    });
 
     if (this.options.occupancyTimeoutMs) {
       this.logger.debug("Setting occupancy timeout", {
@@ -505,15 +533,18 @@ export class TaskManager {
       this.logger.debug("Task not available for release", { taskId, exists: !!task });
       return false;
     }
+    const { status } = task;
 
-    if (task.status.currentAgentId !== agentId && !this.hasOwnerPermission(taskId, agentId)) {
+    if (status.currentAgentId !== agentId && !this.hasOwnerPermission(taskId, agentId)) {
       this.logger.error("Permission denied for releasing task occupancy", { taskId, agentId });
       throw new PermissionError(`Agent ${agentId} cannot release occupancy of task ${taskId}`);
     }
 
-    task.status.isOccupied = false;
-    task.status.occupiedSince = undefined;
-    task.status.currentAgentId = undefined;
+    this._updateTaskStatus(taskId, status, {
+      isOccupied: false,
+      occupiedSince: null,
+      currentAgentId: null,
+    });
 
     this.logger.info("Task occupancy released successfully", { taskId });
     return true;
@@ -546,18 +577,21 @@ export class TaskManager {
   updateTaskStatus(
     taskId: string,
     agentId: string,
-    update: Partial<
-      Pick<TaskStatus, "status" | "errorCount" | "completedRuns" | "lastRunAt" | "nextRunAt">
-    >,
+    update: Partial<Pick<TaskStatus, "errorCount" | "completedRuns" | "currentRetryAttempt">>,
   ) {
     this.logger.trace("Updating task status", { taskId, agentId, update });
     const status = this.getTaskStatus(taskId, agentId);
-    status.errorCount = update.errorCount ?? status.errorCount;
-    status.completedRuns = update.completedRuns ?? status.completedRuns;
-    status.status = update.status ?? status.status;
-    status.lastRunAt = update.lastRunAt ?? status.lastRunAt;
-    status.nextRunAt = update.nextRunAt ?? status.nextRunAt;
+    return this._updateTaskStatus(taskId, status, update);
+  }
 
+  // Just for auditlog
+  private _updateTaskStatus(
+    taskId: string,
+    status: TaskStatus,
+    update: Partial<TaskStatus>,
+  ): TaskStatus {
+    updateDeepPartialObject(status, update);
+    getTaskStateLogger().logStatusChange(taskId, update);
     return status;
   }
 
@@ -607,8 +641,9 @@ export class TaskManager {
       this.logger.warn("Task not found for execution", { taskId });
       return;
     }
+    const { status } = task;
 
-    const retryAttempt = task.status.currentRetryAttempt;
+    const retryAttempt = status.currentRetryAttempt;
     if (retryAttempt > 0) {
       this.logger.debug("Retry attempt", { retryAttempt, maxRetries: task.config.maxRetries });
       if (!!task.config.maxRetries && retryAttempt >= task.config.maxRetries) {
@@ -616,26 +651,27 @@ export class TaskManager {
       }
     }
 
-    if (task.status.status === "COMPLETED" || task.status.isOccupied) {
+    if (status.status === "COMPLETED" || status.isOccupied) {
       this.logger.debug("Skipping task execution", {
         taskId,
-        reason: task.status.status === "COMPLETED" ? "completed" : "occupied",
+        reason: status.status === "COMPLETED" ? "completed" : "occupied",
       });
       return;
     }
 
     const startTime = Date.now();
 
-    task.status.lastRunAt = new Date();
-    task.status.nextRunAt = new Date(Date.now() + task.config.intervalMs);
+    this._updateTaskStatus(taskId, status, {
+      lastRunAt: new Date(),
+      nextRunAt: new Date(Date.now() + task.config.intervalMs),
+    });
 
     this.logger.debug("Executing task callback", {
       taskId,
-      lastRunAt: task.status.lastRunAt,
-      nextRunAt: task.status.nextRunAt,
+      lastRunAt: status.lastRunAt,
+      nextRunAt: status.nextRunAt,
     });
 
-    // TODO Parallelism
     await this.onTaskStart(task.config, this, {
       onAgentCreate(taskId, agentId, taskManager) {
         taskManager.setTaskOccupied(taskId, agentId);
@@ -655,7 +691,7 @@ export class TaskManager {
           maxRuns: task.config.maxRuns,
           retryAttempt: status.currentRetryAttempt,
           maxRetries: task.config.maxRetries,
-          agentId: task.status.currentAgentId,
+          agentId: task.status.currentAgentId!,
           executionTimeMs: Date.now() - startTime,
         });
 
@@ -668,7 +704,6 @@ export class TaskManager {
         taskManager.releaseTaskOccupancy(taskId, agentId);
         // Check if we've reached maxRuns
         if (task.config.maxRuns && task.status.completedRuns >= task.config.maxRuns) {
-          task.status.status = "COMPLETED";
           taskManager.stopTask(taskId, task.config.ownerAgentId);
           taskManager.logger.info("Task reached maximum runs and has been stopped", {
             taskId,
@@ -701,7 +736,7 @@ export class TaskManager {
           maxRuns: task.config.maxRuns,
           retryAttempt,
           maxRetries: task.config.maxRetries,
-          agentId: task.status.currentAgentId,
+          agentId: task.status.currentAgentId!,
           executionTimeMs: Date.now() - startTime,
         });
 
@@ -725,7 +760,9 @@ export class TaskManager {
           if (retryAttempt >= task.config.maxRetries) {
             taskManager.stopTask(taskId, task.config.ownerAgentId);
           } else {
-            status.currentRetryAttempt = retryAttempt + 1;
+            taskManager.updateTaskStatus(taskId, task.config.ownerAgentId, {
+              currentRetryAttempt: retryAttempt + 1,
+            });
           }
         }
       },

@@ -21,7 +21,10 @@
     "url": "https://github.com/i-am-bee/bee-agent-framework-starter/issues"
   },
   "scripts": {
-    "start": "tsx --inspect --no-warnings src/agent.js",
+    "start": "NODE_ENV=development npm run startx",
+    "startx": "chmod +x ./start.sh && ./start.sh",
+    "start:dev": "tsx --inspect --no-warnings src/agent.js",
+    "task:monitor": "tsx --inspect --no-warnings src/ui/task-monitor/monitor.js",
     "ts:check": "tsc --noEmit --project tsconfig.json",
     "build": "rimraf dist && tsc",
     "lint": "eslint",
@@ -35,8 +38,11 @@
     "@google-cloud/vertexai": "^1.9.2",
     "@ibm-generative-ai/node-sdk": "^3.2.4",
     "@opentelemetry/sdk-node": "^0.57.0",
+    "@types/blessed": "^0.1.25",
     "bee-agent-framework": "^0.0.61",
     "bee-observe-connector": "^0.0.6",
+    "blessed": "^0.1.81",
+    "chokidar": "^4.0.3",
     "dotenv": "^16.4.5",
     "groq-sdk": "^0.7.0",
     "ollama": "^0.5.11",

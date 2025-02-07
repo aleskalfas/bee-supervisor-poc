@@ -8,6 +8,8 @@ import * as operator from "./agents/operator.js";
 import * as supervisor from "./agents/supervisor.js";
 import { createConsoleReader } from "./helpers/reader.js";
 import { TaskManager } from "./tasks/task-manager.js";
+import { getLogger, LoggerType } from "./helpers/tmux-logger.js";
+import { agentIdToString } from "./agents/utils.js";
 
 const registry = new AgentRegistry<BeeAgent>({
   async onCreate(
@@ -17,7 +19,7 @@ const registry = new AgentRegistry<BeeAgent>({
   ): Promise<{ agentId: string; instance: BeeAgent }> {
     const { kind: agentKind, type: agentType, instructions, description } = config;
     const num = poolStats.created + 1;
-    const agentId = `${agentKind}:${agentType}[${num}]`;
+    const agentId = agentIdToString({ agentKind, agentType, num });
     const tools = config.tools == null ? toolsFactory.getAvailableToolsNames() : config.tools;
     const instance = createAgent(
       {
@@ -108,6 +110,8 @@ const { instance: supervisorAgent } = await registry.acquireAgent(
 // Can you generate poem for each of these topics: love, day, night?
 // Can you get list of articles about each of these topics: deepseek, interstellar engine, agi?
 
+const supervisorLogger = getLogger(LoggerType.AGENT, "supervisor");
+
 const reader = createConsoleReader({ fallback: "What is the current weather in Las Vegas?" });
 for await (const { prompt } of reader) {
   try {
@@ -126,6 +130,7 @@ for await (const { prompt } of reader) {
       )
       .observe((emitter) => {
         emitter.on("update", (data, meta) => {
+          supervisorLogger;
           reader.write(
             `${(meta.creator as any).input.meta.name} 🤖 (${data.update.key}) :`,
             data.update.value,
