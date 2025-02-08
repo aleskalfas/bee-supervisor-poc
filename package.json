@@ -23,8 +23,9 @@
   "scripts": {
     "start": "NODE_ENV=development npm run startx",
     "startx": "chmod +x ./start.sh && ./start.sh",
-    "start:dev": "tsx --inspect --no-warnings src/agent.js",
-    "task:monitor": "tsx --inspect --no-warnings src/ui/task-monitor/monitor.js",
+    "start:dev": "tsx --no-warnings src/agent.js",
+    "task:monitor": "tsx --inspect --no-warnings src/ui/task-monitor.js",
+    "agent:monitor": "tsx --inspect --no-warnings src/ui/agent-monitor.js",
     "ts:check": "tsc --noEmit --project tsconfig.json",
     "build": "rimraf dist && tsc",
     "lint": "eslint",

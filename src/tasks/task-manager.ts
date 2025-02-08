@@ -1,6 +1,6 @@
 import { FrameworkError } from "bee-agent-framework";
 import { Logger } from "bee-agent-framework/logger/logger";
-import { AgentKindSchema } from "src/agents/agent-registry.js";
+import { AgentKind, AgentKindSchema } from "src/agents/agent-registry.js";
 import { getTaskStateLogger } from "src/tasks/task-state-logger.js";
 import { updateDeepPartialObject } from "src/utils/objects.js";
 import { z } from "zod";
@@ -52,7 +52,7 @@ export const TaskHistoryEntrySchema = z
         "Maximum number of retry attempts if task execution fails. undefined if no retries.",
       )
       .nullish(),
-    agentId: z.string().optional().describe("ID of agent that executed the task, if occupied"),
+    agentId: z.string().nullable().describe("ID of agent that executed the task, if occupied"),
     executionTimeMs: z.number().describe("How long the task execution took in milliseconds"),
   })
   .describe("Records details about a single execution of a task");
@@ -140,6 +140,7 @@ export class TaskManager {
   private removedTasks: Task[] = [];
   private scheduledTasksToStart: { taskId: string; agentId: string }[] = [];
   private taskStartIntervalId: NodeJS.Timeout | null = null;
+  private registeredAgentTypes = new Map<AgentKind, string[]>();
 
   constructor(
     private onTaskStart: (
@@ -190,6 +191,16 @@ export class TaskManager {
     }, 100); // Runs every 100ms (0.1 second)
   }
 
+  registerAgentType(agentKind: AgentKind, agentType: string): void {
+    let types = this.registeredAgentTypes.get(agentKind);
+    if (!types) {
+      types = [agentType];
+      this.registeredAgentTypes.set(agentKind, types);
+    } else {
+      types.push(agentType);
+    }
+  }
+
   /**
    * Add a history entry for a task
    * @private
@@ -199,9 +210,9 @@ export class TaskManager {
     if (!task) {
       return;
     }
-    getTaskStateLogger().logHistoryEntry(taskId, entry);
 
     task.status.history.push(entry);
+    getTaskStateLogger().logHistoryEntry(taskId, entry);
 
     // Trim history if it exceeds maximum entries
     const maxEntries = task.status.maxHistoryEntries ?? this.options.maxHistoryEntries;
@@ -307,6 +318,13 @@ export class TaskManager {
       });
       throw new PermissionError(
         `Agent ${agentId} cannot create task with owner ${task.ownerAgentId}`,
+      );
+    }
+
+    const types = this.registeredAgentTypes.get(task.agentKind);
+    if (!types || !types.includes(task.agentType)) {
+      throw new Error(
+        `Unregistered agent type for task.agentKind:${task.agentKind} task.agentType: ${task.agentType}`,
       );
     }
 

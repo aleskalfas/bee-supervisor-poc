@@ -1,6 +1,7 @@
 import { Logger } from "bee-agent-framework/logger/logger";
 import { BaseToolsFactory } from "src/base/tools-factory.js";
 import { z } from "zod";
+import { getAgentStateLogger } from "./agent-state-logger.js";
 
 export const AgentKindSchema = z
   .enum(["supervisor", "operator"])
@@ -138,6 +139,8 @@ export interface AgentInstanceRef<TInstance> {
   instance: TInstance;
 }
 
+export type AgentTypesMap = Map<AgentKind, Set<string>>;
+
 /**
  * Registry for managing agent types, instances, and pools.
  * Provides functionality for:
@@ -159,18 +162,26 @@ export class AgentRegistry<TAgentInstance> {
   /** Map of agent pools by kind and type, containing sets of available agent IDs */
   private agentPools: Map<AgentKind, AgentTypePoolMap>;
   /** Callbacks for agent lifecycle events */
-  private callbacks: AgentLifecycleCallbacks<TAgentInstance>;
+  private lifecycleCallbacks: AgentLifecycleCallbacks<TAgentInstance>;
+  private onAgentTypeRegistered: (agentKind: AgentKind, agentType: string) => void;
   /** Maps of tools factories for use by agents per agent kinds */
   private toolsFactory = new Map<AgentKind, BaseToolsFactory>();
 
   /**
    * Creates a new AgentRegistry instance
-   * @param callbacks - Callbacks for handling agent lifecycle events
+   * @param callbacks - Callbacks for handling agent lifecycle events and agent type registration
    */
-  constructor(callbacks: AgentLifecycleCallbacks<TAgentInstance>) {
+  constructor({
+    agentLifecycle,
+    onAgentTypeRegistered,
+  }: {
+    onAgentTypeRegistered: (agentKind: AgentKind, agentType: string) => void;
+    agentLifecycle: AgentLifecycleCallbacks<TAgentInstance>;
+  }) {
     this.logger = Logger.root.child({ name: "AgentRegistry" });
     this.logger.info("Initializing AgentRegistry");
-    this.callbacks = callbacks;
+    this.lifecycleCallbacks = agentLifecycle;
+    this.onAgentTypeRegistered = onAgentTypeRegistered;
     // Initialize agent pools for all agent kinds
     this.agentConfigs = new Map(AgentKindSchema.options.map((kind) => [kind, new Map()]));
     this.agentPools = new Map(AgentKindSchema.options.map((kind) => [kind, new Map()]));
@@ -181,7 +192,10 @@ export class AgentRegistry<TAgentInstance> {
    * @param tuples
    */
   registerToolsFactories(tuples: [AgentKind, BaseToolsFactory][]) {
-    tuples.map(([kind, factory]) => this.toolsFactory.set(kind, factory));
+    tuples.map(([kind, factory]) => {
+      this.toolsFactory.set(kind, factory);
+      getAgentStateLogger().logAvailableTools(kind, factory.getAvailableTools());
+    });
   }
 
   private getAgentKindPoolMap(kind: AgentKind) {
@@ -261,6 +275,7 @@ export class AgentRegistry<TAgentInstance> {
     }
 
     agentTypesMap.set(type, config);
+    getAgentStateLogger().logAgentConfigCreate(config);
 
     // Initialize pool if pooling is enabled
     if (maxPoolSize > 0) {
@@ -280,6 +295,8 @@ export class AgentRegistry<TAgentInstance> {
         });
       }
     }
+
+    this.onAgentTypeRegistered(kind, type);
   }
 
   /**
@@ -355,7 +372,7 @@ export class AgentRegistry<TAgentInstance> {
 
     if (!pool || config.maxPoolSize === 0) {
       this.logger.debug("No pool available, creating new agent", { type });
-      return this.createAgent(kind, type, false);
+      return this._acquireAgent(await this.createAgent(kind, type, false));
     }
 
     // Try to get an available agent from the pool
@@ -366,13 +383,7 @@ export class AgentRegistry<TAgentInstance> {
         agent.inUse = true;
 
         this.logger.debug("Acquired agent from pool", { type, agentId });
-
-        if (this.callbacks.onAcquire) {
-          this.logger.trace("Executing onAcquire callback", { agentId });
-          await this.callbacks.onAcquire(agentId);
-        }
-
-        return agent as AgentWithInstance<TAgentInstance>;
+        return this._acquireAgent(agent);
       }
     }
 
@@ -384,7 +395,7 @@ export class AgentRegistry<TAgentInstance> {
         currentSize: pool.size,
         maxSize: config.maxPoolSize,
       });
-      return this.createAgent(kind, type, false);
+      return this._acquireAgent(await this.createAgent(kind, type, false));
     }
 
     this.logger.error("No available agents and pool at capacity", {
@@ -392,6 +403,23 @@ export class AgentRegistry<TAgentInstance> {
       poolSize: config.maxPoolSize,
     });
     throw new Error(`No available agents of type '${type}' in pool and pool is at capacity`);
+  }
+
+  private async _acquireAgent(agent: Agent) {
+    const { agentId } = agent;
+    if (this.lifecycleCallbacks.onAcquire) {
+      this.logger.trace("Executing onAcquire callback", { agentId });
+      await this.lifecycleCallbacks.onAcquire(agentId);
+    }
+    getAgentStateLogger().logAgentLifeCycle({ event: "onAcquire", agentId: agent.agentId });
+
+    const poolStats = this.getPoolStats(agent.kind, agent.type);
+    getAgentStateLogger().logPoolChange({
+      agentKind: agent.kind,
+      agentType: agent.type,
+      ...poolStats,
+    });
+    return agent as AgentWithInstance<TAgentInstance>;
   }
 
   /**
@@ -416,15 +444,23 @@ export class AgentRegistry<TAgentInstance> {
       return;
     }
 
-    if (this.callbacks.onRelease) {
+    if (this.lifecycleCallbacks.onRelease) {
       this.logger.trace("Executing onRelease callback", { agentId });
-      await this.callbacks.onRelease(agentId);
+      await this.lifecycleCallbacks.onRelease(agentId);
     }
 
     // Return to pool
     agent.inUse = false;
     pool.add(agentId);
     this.logger.debug("Agent released back to pool", { agentId, type: agent.type });
+    getAgentStateLogger().logAgentLifeCycle({ event: "onRelease", agentId: agent.agentId });
+
+    const poolStats = this.getPoolStats(agent.kind, agent.type);
+    getAgentStateLogger().logPoolChange({
+      agentKind: agent.kind,
+      agentType: agent.type,
+      ...poolStats,
+    });
   }
 
   /**
@@ -441,9 +477,13 @@ export class AgentRegistry<TAgentInstance> {
   ): Promise<AgentWithInstance<TAgentInstance>> {
     this.logger.debug("Creating new agent", { kind, type, forPool });
     const config = this.getAgentTypeConfig(kind, type);
-    const poolStats = this.getPoolStats(kind, type);
+    let poolStats = this.getPoolStats(kind, type);
     const toolsFactory = this.getToolsFactory(kind);
-    const { agentId, instance } = await this.callbacks.onCreate(config, poolStats, toolsFactory);
+    const { agentId, instance } = await this.lifecycleCallbacks.onCreate(
+      config,
+      poolStats,
+      toolsFactory,
+    );
 
     const agent = {
       agentId,
@@ -456,6 +496,11 @@ export class AgentRegistry<TAgentInstance> {
     this.agents.set(agentId, agent);
 
     this.logger.info("Agent created successfully", { agentId, type, forPool });
+
+    getAgentStateLogger().logAgentLifeCycle({ event: "onCreate", agentId: agent.agentId });
+
+    poolStats = this.getPoolStats(kind, type);
+    getAgentStateLogger().logPoolChange({ agentKind: kind, agentType: type, ...poolStats });
     return agent;
   }
 
@@ -477,14 +522,25 @@ export class AgentRegistry<TAgentInstance> {
     if (pool) {
       pool.delete(agentId);
       this.logger.trace("Removed agent from pool", { agentId, kind: agent.kind, type: agent.type });
+    } else {
+      throw new Error(`Missing pool`);
     }
 
-    await this.callbacks.onDestroy(agent.instance);
+    await this.lifecycleCallbacks.onDestroy(agent.instance);
     this.agents.delete(agentId);
     this.logger.info("Agent destroyed successfully", {
       agentId,
       kind: agent.kind,
       type: agent.type,
+    });
+
+    getAgentStateLogger().logAgentLifeCycle({ event: "onDestroy", agentId });
+
+    const poolStats = this.getPoolStats(agent.kind, agent.type);
+    getAgentStateLogger().logPoolChange({
+      agentKind: agent.kind,
+      agentType: agent.type,
+      ...poolStats,
     });
   }
 

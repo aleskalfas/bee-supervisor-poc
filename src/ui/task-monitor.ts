@@ -3,13 +3,14 @@ import chokidar from "chokidar";
 import { createReadStream } from "fs";
 import { join } from "path";
 import { createInterface } from "readline";
-import { TaskStateData, TaskUpdateTypeEnum } from "src/tasks/task-state-logger.js";
+import { stringToAgentId } from "src/agents/utils.js";
 import {
   TaskConfig,
   TaskHistoryEntry,
   TaskStatus,
   TaskStatusEnum,
 } from "src/tasks/task-manager.js";
+import { TaskUpdate, TaskUpdateTypeEnum } from "src/tasks/task-state-logger.js";
 import { truncateText } from "src/utils/text.js";
 import { formatDuration } from "src/utils/time.js";
 import {
@@ -21,14 +22,11 @@ import {
   applyStyle,
   UIConfig,
 } from "./ui-config.js";
-import { stringToAgentId } from "src/agents/utils.js";
+import { LogInit } from "src/base/audit-log.js";
 
-interface TaskUpdate {
-  timestamp: string;
-  type: TaskUpdateTypeEnum;
-  taskId: string;
-  data: TaskStateData;
-}
+const TASK_CONFIG_DEFAULT_TEXT = "Select a task to view config";
+const TASK_DETAILS_DEFAULT_TEXT = "Select a task to view details";
+const TASK_HISTORY_DEFAULT_TEXT = "Select a task to view history";
 
 class TaskMonitor {
   private screen: blessed.Widgets.Screen;
@@ -59,24 +57,10 @@ class TaskMonitor {
       keys: true,
       vi: true,
       mouse: true,
-      style: {
-        selected: { bg: "blue", fg: "white" },
-        border: { fg: "white" },
-        item: {
-          hover: { bg: "blue" },
-        },
-      },
+      style: UIConfig.list,
       tags: true,
       scrollable: true,
-      scrollbar: {
-        ch: " ",
-        track: {
-          bg: "gray",
-        },
-        style: {
-          inverse: true,
-        },
-      },
+      scrollbar: UIConfig.scrollbar,
     });
 
     this.taskConfig = blessed.box({
@@ -87,74 +71,50 @@ class TaskMonitor {
       top: 0,
       border: { type: "line" },
       label: " Config ",
-      content: "Select a task to view config",
+      content: TASK_CONFIG_DEFAULT_TEXT,
       tags: true,
       scrollable: true,
       mouse: true,
       keys: true,
       vi: true,
       alwaysScroll: true,
-      scrollbar: {
-        ch: " ",
-        track: {
-          bg: "gray",
-        },
-        style: {
-          inverse: true,
-        },
-      },
+      scrollbar: UIConfig.scrollbar,
     });
 
     this.taskDetails = blessed.box({
       parent: this.screen,
       width: "60%",
-      height: "40%",
+      height: "50%",
       right: 0,
       top: 0,
       border: { type: "line" },
       label: " Details ",
-      content: "Select a task to view details",
+      content: TASK_DETAILS_DEFAULT_TEXT,
       tags: true,
       scrollable: true,
       mouse: true,
       keys: true,
       vi: true,
       alwaysScroll: true,
-      scrollbar: {
-        ch: " ",
-        track: {
-          bg: "gray",
-        },
-        style: {
-          inverse: true,
-        },
-      },
+      scrollbar: UIConfig.scrollbar,
     });
 
     this.taskHistory = blessed.box({
       parent: this.screen,
       width: "60%",
-      height: "30%",
+      height: "20%",
       right: 0,
-      top: "40%",
+      top: "50%",
       border: { type: "line" },
       label: " History ",
-      content: "Select a task to view history",
+      content: TASK_HISTORY_DEFAULT_TEXT,
       tags: true,
       scrollable: true,
       mouse: true,
       keys: true,
       vi: true,
       alwaysScroll: true,
-      scrollbar: {
-        ch: " ",
-        track: {
-          bg: "gray",
-        },
-        style: {
-          inverse: true,
-        },
-      },
+      scrollbar: UIConfig.scrollbar,
     });
 
     this.logBox = blessed.log({
@@ -170,17 +130,14 @@ class TaskMonitor {
       mouse: true,
       keys: true,
       vi: true,
-      scrollbar: {
-        ch: " ",
-        track: {
-          bg: "gray",
-        },
-        style: {
-          inverse: true,
-        },
-      },
+      scrollbar: UIConfig.scrollbar,
     });
 
+    this.setupEventHandlers();
+    this.screen.render();
+  }
+
+  private setupEventHandlers() {
     this.screen.key(["escape", "q", "C-c"], () => process.exit(0));
 
     const self = this;
@@ -197,8 +154,9 @@ class TaskMonitor {
             .split(" ")
             .at(-1) ?? "";
         // this.logBox.log(`Selected task: ${taskId}`);
-        this.updateTaskDetails(taskId);
-        this.updateTaskConfig(taskId); // Add this line
+        this.updateTaskDetails(taskId, false);
+        this.updateTaskConfig(taskId, false);
+        this.screen.render();
       }
     });
 
@@ -222,8 +180,26 @@ class TaskMonitor {
         this.screen.render();
       }
     });
+  }
 
-    this.screen.render();
+  private reset(shouldRender = true) {
+    // Reset data
+    [this.tasks, this.taskConfigs].forEach((m) => m.clear());
+    this.selectedTaskIndex = null;
+
+    // Update content
+    this.updateTaskList(false);
+    this.updateTaskDetails(undefined, false);
+    this.updateTaskConfig(undefined, false);
+
+    // Reset log
+    this.logBox.setContent("");
+    this.logBox.log("Reading initial state from log...");
+
+    // Render
+    if (shouldRender) {
+      this.screen.render();
+    }
   }
 
   private updateTaskList(shouldRender = true): void {
@@ -237,10 +213,21 @@ class TaskMonitor {
     }
   }
 
-  private updateTaskDetails(taskId: string, shouldRender = true): void {
+  private updateTaskDetails(taskId?: string, shouldRender = true): void {
+    if (!taskId) {
+      this.taskDetails.setContent(TASK_DETAILS_DEFAULT_TEXT);
+      if (shouldRender) {
+        this.screen.render();
+      }
+      return;
+    }
+
     const task = this.tasks.get(taskId);
     if (!task) {
-      // this.logBox.log(`Task not found: ${taskId}`);
+      this.taskDetails.setContent(TASK_DETAILS_DEFAULT_TEXT);
+      if (shouldRender) {
+        this.screen.render();
+      }
       return;
     }
 
@@ -282,7 +269,9 @@ class TaskMonitor {
           (entry) =>
             `${applyStyle(new Date(entry.timestamp).toLocaleString(), UIConfig.labels.timestamp)}` +
             ` ${applyStatusStyle(entry.terminalStatus)}` +
-            ` ${applyAgentIdStyle(stringToAgentId(String(entry.agentId)))}` +
+            (entry.agentId && entry.agentId !== "null"
+              ? ` ${applyAgentIdStyle(stringToAgentId(String(entry.agentId)))}`
+              : "") +
             ` ${applyStyle(formatDuration(entry.executionTimeMs), UIConfig.labels.executionTime)}` +
             (entry.output
               ? ` ${applyStyle(truncateText(String(entry.output), 512), UIConfig.labels.output, AMBIENT_VERSION)}`
@@ -302,10 +291,21 @@ class TaskMonitor {
     }
   }
 
-  private updateTaskConfig(taskId: string, shouldRender = true): void {
+  private updateTaskConfig(taskId?: string, shouldRender = true): void {
+    if (!taskId) {
+      this.taskConfig.setContent(TASK_CONFIG_DEFAULT_TEXT);
+      if (shouldRender) {
+        this.screen.render();
+      }
+      return;
+    }
+
     const config = this.taskConfigs.get(taskId);
     if (!config) {
-      this.taskConfig.setContent("No configuration available");
+      this.taskConfig.setContent(TASK_CONFIG_DEFAULT_TEXT);
+      if (shouldRender) {
+        this.screen.render();
+      }
       return;
     }
 
@@ -345,7 +345,13 @@ class TaskMonitor {
 
   private processLogLine(line: string, shouldRender = true): void {
     try {
-      const update: TaskUpdate = JSON.parse(line);
+      const update: TaskUpdate | LogInit = JSON.parse(line);
+      if (update.type === "@log_init") {
+        // RESET
+        this.reset(shouldRender);
+        return;
+      }
+
       const task = this.tasks.get(update.taskId) || {
         id: update.taskId,
         status: "SCHEDULED" as TaskStatusEnum,
@@ -357,6 +363,8 @@ class TaskMonitor {
         history: [],
       };
 
+      // if(update.type === '')
+
       if (update.type === TaskUpdateTypeEnum.CONFIG) {
         this.taskConfigs.set(update.taskId, update.data as TaskConfig);
       } else if (update.type === TaskUpdateTypeEnum.STATUS) {
@@ -366,7 +374,7 @@ class TaskMonitor {
       }
 
       this.tasks.set(update.taskId, task);
-      this.updateTaskList(shouldRender);
+      this.updateTaskList(false);
 
       // Update details if this task is currently selected
       const selectedIndex = this.selectedTaskIndex;
@@ -375,7 +383,7 @@ class TaskMonitor {
         if (selectedItem?.content) {
           const selectedTaskId = selectedItem.content.toString().replace(/\{[^}]+\}/g, "");
           if (selectedTaskId === update.taskId) {
-            this.updateTaskDetails(update.taskId, shouldRender);
+            this.updateTaskDetails(update.taskId, false);
           }
         }
       }
@@ -405,12 +413,11 @@ class TaskMonitor {
       });
 
       for await (const line of rl) {
-        this.processLogLine(line, false); // Don't render updates while initializing
+        this.processLogLine(line); // Don't render updates while initializing
       }
 
       this.logBox.log(`Initial state loaded: ${this.tasks.size} tasks found`);
       this.updateTaskList();
-      this.screen.render();
     } catch (error) {
       if (error instanceof Error) {
         this.logBox.log(`Error reading initial state: ${error.message}`);
@@ -437,9 +444,10 @@ class TaskMonitor {
           });
 
           for await (const line of rl) {
-            this.processLogLine(line, true); // Render updates for new changes
+            this.processLogLine(line); // Render updates for new changes
             lastProcessedSize += Buffer.from(line).length + 1; // +1 for newline
           }
+          this.screen.render();
         } catch (error) {
           if (error instanceof Error) {
             this.logBox.log(`Error processing log update: ${error.message}`);

@@ -10,33 +10,44 @@ import { createConsoleReader } from "./helpers/reader.js";
 import { TaskManager } from "./tasks/task-manager.js";
 import { getLogger, LoggerType } from "./helpers/tmux-logger.js";
 import { agentIdToString } from "./agents/utils.js";
+import { getAgentStateLogger } from "./agents/agent-state-logger.js";
+import { getTaskStateLogger } from "./tasks/task-state-logger.js";
+
+// Reset audit logs
+getAgentStateLogger();
+getTaskStateLogger();
 
 const registry = new AgentRegistry<BeeAgent>({
-  async onCreate(
-    config,
-    poolStats,
-    toolsFactory,
-  ): Promise<{ agentId: string; instance: BeeAgent }> {
-    const { kind: agentKind, type: agentType, instructions, description } = config;
-    const num = poolStats.created + 1;
-    const agentId = agentIdToString({ agentKind, agentType, num });
-    const tools = config.tools == null ? toolsFactory.getAvailableToolsNames() : config.tools;
-    const instance = createAgent(
-      {
-        agentKind,
-        agentType,
-        agentId,
-        description,
-        instructions,
-        tools,
-      },
+  agentLifecycle: {
+    async onCreate(
+      config,
+      poolStats,
       toolsFactory,
-    );
+    ): Promise<{ agentId: string; instance: BeeAgent }> {
+      const { kind: agentKind, type: agentType, instructions, description } = config;
+      const num = poolStats.created + 1;
+      const agentId = agentIdToString({ agentKind, agentType, num });
+      const tools = config.tools == null ? toolsFactory.getAvailableToolsNames() : config.tools;
+      const instance = createAgent(
+        {
+          agentKind,
+          agentType,
+          agentId,
+          description,
+          instructions,
+          tools,
+        },
+        toolsFactory,
+      );
 
-    return { agentId, instance };
+      return { agentId, instance };
+    },
+    async onDestroy(instance) {
+      instance.destroy();
+    },
   },
-  async onDestroy(instance) {
-    instance.destroy();
+  onAgentTypeRegistered(agentKind, agentType) {
+    taskManager.registerAgentType(agentKind, agentType);
   },
 });
 

@@ -4,11 +4,15 @@ import { join } from "path";
 export interface LogUpdate<TType, TData> {
   timestamp: string;
   type: TType;
-  taskId: string;
   data: TData;
 }
 
-export class BaseAuditLog<TType, TData> {
+export interface LogInit {
+  timestamp: string;
+  type: "@log_init";
+}
+
+export class BaseAuditLog<TType, TData, TLogUpdate extends LogUpdate<TType, TData>> {
   protected logPath: string;
 
   constructor(logFileDefaultPath: readonly string[], logFileDefaultName: string, logPath?: string) {
@@ -18,6 +22,7 @@ export class BaseAuditLog<TType, TData> {
       this.logPath = logPath;
     }
     this.rotateLogFileIfExists();
+    this.logInit();
   }
 
   private rotateLogFileIfExists(): void {
@@ -39,7 +44,12 @@ export class BaseAuditLog<TType, TData> {
     }
   }
 
-  protected logUpdate(update: LogUpdate<TType, TData>) {
-    appendFileSync(this.logPath, JSON.stringify(update) + "\n");
+  private logInit() {
+    this.logUpdate({ type: "@log_init" });
+  }
+
+  protected logUpdate(update: Omit<TLogUpdate, "timestamp"> | Omit<LogInit, "timestamp">) {
+    const timestamp = new Date().toISOString();
+    appendFileSync(this.logPath, JSON.stringify({ ...update, timestamp }) + "\n");
   }
 }

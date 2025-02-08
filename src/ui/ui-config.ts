@@ -1,4 +1,4 @@
-import { AgentKind, AgentKindSchema } from "src/agents/agent-registry.js";
+import { AgentKind, AgentKindSchema, AvailableTool } from "src/agents/agent-registry.js";
 import { AgentId } from "src/agents/utils.js";
 import { TaskStatusEnum } from "src/tasks/task-manager.js";
 
@@ -13,6 +13,7 @@ export type StyleItemValue = StyleItem | StyleItemVersioned;
 export type StyleCategory = Record<string, StyleItemValue>;
 
 export const DEFAULT_VERSION = "default";
+export const BUSY_IDLE = "busy_idle";
 export const AMBIENT_VERSION = "ambient";
 
 export const UIConfig = {
@@ -35,6 +36,12 @@ export const UIConfig = {
     error: { fg: "red", bold: true },
     executionTime: { fg: "yellow" },
     timestamp: { fg: "gray" },
+    tool: { fg: "cyan", icon: "⚒" },
+    eventType: {
+      fg: "yellow",
+      bold: true,
+      icon: "⚡",
+    },
   } satisfies StyleCategory,
 
   status: {
@@ -44,12 +51,41 @@ export const UIConfig = {
     SCHEDULED: { fg: "yellow", icon: "◆" }, // Diamond
     WAITING: { fg: "cyan", icon: "◇" }, // Hollow diamond
     STOPPED: { fg: "grey", icon: "◼" }, // Filled square
-    REMOVED: { fg: "darkgray", icon: "×" }, // Cross
+    REMOVED: { fg: "#71797E", icon: "×" }, // Cross
   } satisfies StyleCategory,
 
+  BUSY: {
+    fg: "red",
+    bg: null,
+    bold: true,
+    prefix: "⚡",
+    suffix: "",
+  },
+  IDLE: {
+    fg: "green",
+    bg: null,
+    bold: false,
+    prefix: "○",
+    suffix: "",
+  },
+
   boolean: {
-    TRUE: { fg: "green", icon: "[✓]" },
-    FALSE: { fg: "red", icon: "[✕]" },
+    TRUE: {
+      [DEFAULT_VERSION]: { fg: "green", icon: "[✓]" },
+      [BUSY_IDLE]: {
+        fg: "red",
+        bold: true,
+        icon: "⚡",
+      },
+    },
+    FALSE: {
+      [DEFAULT_VERSION]: { fg: "red", icon: "[✕]" },
+      [BUSY_IDLE]: {
+        fg: "green",
+        bold: false,
+        icon: "○",
+      },
+    },
   } satisfies StyleCategory,
 
   borders: {
@@ -57,7 +93,16 @@ export const UIConfig = {
     fg: "white",
   },
 
+  list: {
+    selected: { bg: "blue", fg: "white" },
+    border: { fg: "white" },
+    item: {
+      hover: { bg: "blue" },
+    },
+  },
+
   scrollbar: {
+    ch: " ",
     track: { bg: "gray" },
     style: { inverse: true },
   },
@@ -74,7 +119,6 @@ export const applyStyle = (
   version = "default",
 ) => {
   let style;
-  // = version ? Object.keys(styleItem).includes(version) ? styleItem[version] :
   if (version && Object.keys(styleItem).includes(version)) {
     style = (styleItem as StyleItemVersioned)[version];
   } else {
@@ -109,12 +153,36 @@ export function applyNumberStyle(count: number, inverse = false) {
   return applyStyle(String(count), style);
 }
 
-export function applyBooleanStyle(value: boolean) {
-  const style = value ? UIConfig.boolean.TRUE : UIConfig.boolean.FALSE;
-  return applyStyle(style.icon, { fg: style.fg });
+export function applyBooleanStyle(
+  value: boolean,
+  version?: typeof DEFAULT_VERSION | typeof BUSY_IDLE,
+) {
+  const styleVersions = value ? UIConfig.boolean.TRUE : UIConfig.boolean.FALSE;
+  const style = styleVersions[version ?? DEFAULT_VERSION];
+  return applyStyle(style.icon, { ...style }, version);
 }
 
 export function applyAgentIdStyle(agentId: AgentId) {
   const style = UIConfig.labels.agentId[agentId.agentKind as AgentKind];
   return applyStyle(`${style.icon} ${agentId.agentType}[${agentId.num}]`, { ...style });
+}
+
+export function applyAgentKindTypeStyle(agentKind: AgentKind, agentType: string) {
+  const style = UIConfig.labels.agentId[agentKind as AgentKind];
+  return applyStyle(`${style.icon} ${agentType}`, { ...style });
+}
+
+export function applyToolsStyle(tools: AvailableTool[]) {
+  return tools
+    .map((t) => [
+      applyToolNameStyle(t.name),
+      applyStyle(t.description, UIConfig.labels.description),
+      "",
+    ])
+    .join("\n");
+}
+
+export function applyToolNameStyle(toolName: string) {
+  const style = UIConfig.labels.tool;
+  return applyStyle(`${style.icon} ${toolName}`, style);
 }
