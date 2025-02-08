@@ -1,5 +1,7 @@
 # 🐝 Bee Supervisor
 
+![supervisor-medium](https://github.com/user-attachments/assets/8282bb14-09cc-4e0e-aab2-25a100371615)
+
 A proof-of-concept implementation of a multi-agent task management system that demonstrates hierarchical agent coordination and task based on [BeeAI Framework](https://i-am-bee.github.io/bee-agent-framework#/) ❤️.
 
 ## Features
