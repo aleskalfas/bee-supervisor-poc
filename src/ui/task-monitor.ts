@@ -3,7 +3,7 @@ import chokidar from "chokidar";
 import { createReadStream } from "fs";
 import { join } from "path";
 import { createInterface } from "readline";
-import { stringToAgentId } from "src/agents/utils.js";
+import { stringToAgentId } from "src/agents/agent-id.js";
 import {
   TaskConfig,
   TaskHistoryEntry,

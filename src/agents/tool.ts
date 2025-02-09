@@ -53,7 +53,7 @@ export const RegisterAgentTypeSchema = z
     method: z.literal("registerAgentType"),
     agentKind: z.literal(AgentKindSchema.Enum.operator),
     config: AgentConfigSchema.omit({
-      kind: true,
+      agentKind: true,
     }),
   })
   .describe("Register a new agent type with its configuration.");
@@ -149,7 +149,7 @@ export class AgentRegistryTool extends Tool<
         data = this.registry.getToolsFactory(input.agentKind).getAvailableTools();
         break;
       case "registerAgentType":
-        data = this.registry.registerAgentType({ ...input.config, kind: input.agentKind });
+        data = this.registry.registerAgentType({ ...input.config, agentKind: input.agentKind });
         break;
       case "getAgentTypes":
         data = this.registry.getAgentTypes();

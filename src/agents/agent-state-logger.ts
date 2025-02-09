@@ -1,5 +1,7 @@
+import { TaskConfig, TaskHistoryEntry } from "src/tasks/task-manager.js";
 import { BaseAuditLog, LogUpdate } from "../base/audit-log.js";
 import { AgentConfig, AgentKind, AvailableTool } from "./agent-registry.js";
+import { AgentId } from "./agent-id.js";
 
 export const DEFAULT_NAME = "agent_state";
 export const DEFAULT_PATH = ["logs"] as readonly string[];
@@ -27,7 +29,9 @@ export interface PoolChangeData {
 
 export interface AgentLifecycleData {
   event: "onCreate" | "onDestroy" | "onAcquire" | "onRelease";
-  agentId: string;
+  agentId: AgentId;
+  taskConfig?: TaskConfig;
+  historyEntry?: TaskHistoryEntry;
 }
 
 export type AgentStateData = AgentConfig | AvailableToolsData | PoolChangeData | AgentLifecycleData;

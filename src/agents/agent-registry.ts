@@ -2,6 +2,7 @@ import { Logger } from "bee-agent-framework/logger/logger";
 import { BaseToolsFactory } from "src/base/tools-factory.js";
 import { z } from "zod";
 import { getAgentStateLogger } from "./agent-state-logger.js";
+import { stringToAgentId } from "./agent-id.js";
 
 export const AgentKindSchema = z
   .enum(["supervisor", "operator"])
@@ -15,8 +16,8 @@ export type AgentKind = z.infer<typeof AgentKindSchema>;
  * Defines the basic properties and requirements for creating agents of a specific type.
  */
 export const AgentConfigSchema = z.object({
-  kind: AgentKindSchema,
-  type: z.string().describe("Unique identifier for the agent type"),
+  agentKind: AgentKindSchema,
+  agentType: z.string().describe("Unique identifier for the agent type"),
   instructions: z.string().describe("Provide detailed instructions on how the agent should act."),
   description: z
     .string()
@@ -48,8 +49,8 @@ export const AgentSchema = z.object({
   /** Unique identifier for this specific agent instance */
   agentId: z.string(),
   /** The type of agent this instance represents */
-  type: z.string(),
-  kind: AgentKindSchema,
+  agentType: z.string(),
+  agentKind: AgentKindSchema,
   /** Configuration settings for this agent */
   config: AgentConfigSchema,
   /**
@@ -242,7 +243,7 @@ export class AgentRegistry<TAgentInstance> {
    * @throws Error if agent type is already registered
    */
   registerAgentType(config: AgentConfig): void {
-    const { kind, type, maxPoolSize, autoPopulatePool } = config;
+    const { agentKind: kind, agentType: type, maxPoolSize, autoPopulatePool } = config;
     this.logger.info("Registering new agent type", {
       kind: kind,
       type: type,
@@ -255,7 +256,7 @@ export class AgentRegistry<TAgentInstance> {
       throw new Error(`Agent type '${type}' is already registered`);
     }
 
-    const toolsFactory = this.getToolsFactory(config.kind);
+    const toolsFactory = this.getToolsFactory(config.agentKind);
     const availableTools = toolsFactory.getAvailableTools();
     if (config.tools?.filter((it) => !!it.length).length) {
       const undefinedTools = config.tools.filter(
@@ -411,12 +412,15 @@ export class AgentRegistry<TAgentInstance> {
       this.logger.trace("Executing onAcquire callback", { agentId });
       await this.lifecycleCallbacks.onAcquire(agentId);
     }
-    getAgentStateLogger().logAgentLifeCycle({ event: "onAcquire", agentId: agent.agentId });
+    getAgentStateLogger().logAgentLifeCycle({
+      event: "onAcquire",
+      agentId: stringToAgentId(agent.agentId),
+    });
 
-    const poolStats = this.getPoolStats(agent.kind, agent.type);
+    const poolStats = this.getPoolStats(agent.agentKind, agent.agentType);
     getAgentStateLogger().logPoolChange({
-      agentKind: agent.kind,
-      agentType: agent.type,
+      agentKind: agent.agentKind,
+      agentType: agent.agentType,
       ...poolStats,
     });
     return agent as AgentWithInstance<TAgentInstance>;
@@ -435,7 +439,11 @@ export class AgentRegistry<TAgentInstance> {
       throw new Error(`Agent with ID '${agentId}' not found`);
     }
 
-    const { kind, type, maxPoolSize } = this.getAgentTypeConfig(agent.kind, agent.type);
+    const {
+      agentKind: kind,
+      agentType: type,
+      maxPoolSize,
+    } = this.getAgentTypeConfig(agent.agentKind, agent.agentType);
     const pool = this.getAgentPoolMap(kind, type);
 
     if (!pool || maxPoolSize === 0) {
@@ -452,13 +460,16 @@ export class AgentRegistry<TAgentInstance> {
     // Return to pool
     agent.inUse = false;
     pool.add(agentId);
-    this.logger.debug("Agent released back to pool", { agentId, type: agent.type });
-    getAgentStateLogger().logAgentLifeCycle({ event: "onRelease", agentId: agent.agentId });
+    this.logger.debug("Agent released back to pool", { agentId, type: agent.agentType });
+    getAgentStateLogger().logAgentLifeCycle({
+      event: "onRelease",
+      agentId: stringToAgentId(agent.agentId),
+    });
 
-    const poolStats = this.getPoolStats(agent.kind, agent.type);
+    const poolStats = this.getPoolStats(agent.agentKind, agent.agentType);
     getAgentStateLogger().logPoolChange({
-      agentKind: agent.kind,
-      agentType: agent.type,
+      agentKind: agent.agentKind,
+      agentType: agent.agentType,
       ...poolStats,
     });
   }
@@ -487,8 +498,8 @@ export class AgentRegistry<TAgentInstance> {
 
     const agent = {
       agentId,
-      kind,
-      type,
+      agentKind: kind,
+      agentType: type,
       config,
       inUse: !forPool,
       instance,
@@ -497,7 +508,10 @@ export class AgentRegistry<TAgentInstance> {
 
     this.logger.info("Agent created successfully", { agentId, type, forPool });
 
-    getAgentStateLogger().logAgentLifeCycle({ event: "onCreate", agentId: agent.agentId });
+    getAgentStateLogger().logAgentLifeCycle({
+      event: "onCreate",
+      agentId: stringToAgentId(agentId),
+    });
 
     poolStats = this.getPoolStats(kind, type);
     getAgentStateLogger().logPoolChange({ agentKind: kind, agentType: type, ...poolStats });
@@ -518,10 +532,14 @@ export class AgentRegistry<TAgentInstance> {
     }
 
     // Remove from pool if it's in one
-    const pool = this.getAgentPoolMap(agent.kind, agent.type);
+    const pool = this.getAgentPoolMap(agent.agentKind, agent.agentType);
     if (pool) {
       pool.delete(agentId);
-      this.logger.trace("Removed agent from pool", { agentId, kind: agent.kind, type: agent.type });
+      this.logger.trace("Removed agent from pool", {
+        agentId,
+        kind: agent.agentKind,
+        type: agent.agentType,
+      });
     } else {
       throw new Error(`Missing pool`);
     }
@@ -530,16 +548,19 @@ export class AgentRegistry<TAgentInstance> {
     this.agents.delete(agentId);
     this.logger.info("Agent destroyed successfully", {
       agentId,
-      kind: agent.kind,
-      type: agent.type,
+      kind: agent.agentKind,
+      type: agent.agentType,
     });
 
-    getAgentStateLogger().logAgentLifeCycle({ event: "onDestroy", agentId });
+    getAgentStateLogger().logAgentLifeCycle({
+      event: "onDestroy",
+      agentId: stringToAgentId(agentId),
+    });
 
-    const poolStats = this.getPoolStats(agent.kind, agent.type);
+    const poolStats = this.getPoolStats(agent.agentKind, agent.agentType);
     getAgentStateLogger().logPoolChange({
-      agentKind: agent.kind,
-      agentType: agent.type,
+      agentKind: agent.agentKind,
+      agentType: agent.agentType,
       ...poolStats,
     });
   }

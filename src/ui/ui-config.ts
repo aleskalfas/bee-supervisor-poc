@@ -1,10 +1,14 @@
+import { clone } from "remeda";
+import { AgentId, AgentPoolId, AgentPoolTypeId } from "src/agents/agent-id.js";
 import { AgentKind, AgentKindSchema, AvailableTool } from "src/agents/agent-registry.js";
-import { AgentId } from "src/agents/utils.js";
 import { TaskStatusEnum } from "src/tasks/task-manager.js";
+import { Agent, AgentPool } from "./agent-monitor.js";
 
 export interface StyleItem {
   fg?: string;
   bold?: boolean;
+
+  italic?: boolean;
   icon?: string;
 }
 export type StyleItemVersioned = Record<string, StyleItem>;
@@ -14,10 +18,12 @@ export type StyleCategory = Record<string, StyleItemValue>;
 
 export const DEFAULT_VERSION = "default";
 export const BUSY_IDLE = "busy_idle";
+export const INVERSE_COLOR = "inverse_color";
 export const AMBIENT_VERSION = "ambient";
 
 export const UIConfig = {
   labels: {
+    default: { fg: "white", bold: true },
     taskId: { fg: "#CC5500", bold: true },
     status: { fg: "white", bold: true },
     agentKind: { fg: "magenta", bold: true },
@@ -26,6 +32,7 @@ export const UIConfig = {
       [AgentKindSchema.Values.supervisor]: { fg: "#8B4513", bold: true, icon: "⬢" },
       [AgentKindSchema.Values.operator]: { fg: "#8B4513", bold: true, icon: "⬡" },
     },
+    agentPoolId: { fg: "white", italic: true },
     owner: { fg: "#8B4513", bold: true },
     description: { fg: "#7393B3", bold: false },
     input: { fg: "yellow", bold: false },
@@ -72,6 +79,7 @@ export const UIConfig = {
   boolean: {
     TRUE: {
       [DEFAULT_VERSION]: { fg: "green", icon: "[✓]" },
+      [INVERSE_COLOR]: { fg: "red", icon: "[✓]" },
       [BUSY_IDLE]: {
         fg: "red",
         bold: true,
@@ -80,6 +88,7 @@ export const UIConfig = {
     },
     FALSE: {
       [DEFAULT_VERSION]: { fg: "red", icon: "[✕]" },
+      [INVERSE_COLOR]: { fg: "green", icon: "[✕]" },
       [BUSY_IDLE]: {
         fg: "green",
         bold: false,
@@ -155,21 +164,25 @@ export function applyNumberStyle(count: number, inverse = false) {
 
 export function applyBooleanStyle(
   value: boolean,
-  version?: typeof DEFAULT_VERSION | typeof BUSY_IDLE,
+  version?: typeof DEFAULT_VERSION | typeof BUSY_IDLE | typeof INVERSE_COLOR,
 ) {
   const styleVersions = value ? UIConfig.boolean.TRUE : UIConfig.boolean.FALSE;
   const style = styleVersions[version ?? DEFAULT_VERSION];
   return applyStyle(style.icon, { ...style }, version);
 }
 
-export function applyAgentIdStyle(agentId: AgentId) {
-  const style = UIConfig.labels.agentId[agentId.agentKind as AgentKind];
-  return applyStyle(`${style.icon} ${agentId.agentType}[${agentId.num}]`, { ...style });
+export function applyAgentPoolIdStyle(agentPoolId: AgentPoolId) {
+  const style = UIConfig.labels.agentPoolId;
+  return applyStyle(agentPoolId.agentKind, clone(style));
 }
 
-export function applyAgentKindTypeStyle(agentKind: AgentKind, agentType: string) {
-  const style = UIConfig.labels.agentId[agentKind as AgentKind];
-  return applyStyle(`${style.icon} ${agentType}`, { ...style });
+export function applyAgentIdStyle(agentId: AgentId | AgentPoolTypeId) {
+  const style = UIConfig.labels.agentId[agentId.agentKind as AgentKind];
+  const isAgentId = (agentId as AgentId).num != null;
+  return applyStyle(
+    `${style.icon} ${agentId.agentType}${isAgentId ? `[${(agentId as AgentId).num}]` : ""}`,
+    { ...style },
+  );
 }
 
 export function applyToolsStyle(tools: AvailableTool[]) {
@@ -185,4 +198,65 @@ export function applyToolsStyle(tools: AvailableTool[]) {
 export function applyToolNameStyle(toolName: string) {
   const style = UIConfig.labels.tool;
   return applyStyle(`${style.icon} ${toolName}`, style);
+}
+
+export function bool(
+  value: boolean,
+  version?: typeof DEFAULT_VERSION | typeof BUSY_IDLE | typeof INVERSE_COLOR,
+) {
+  return applyBooleanStyle(value, version);
+}
+
+export function num(value: number, inverse = false) {
+  return applyNumberStyle(value, inverse);
+}
+
+export function label(value: string) {
+  return applyStyle(value, UIConfig.labels.default);
+}
+
+export function agentPoolId(value: AgentPoolId) {
+  return applyAgentPoolIdStyle(value);
+}
+export function agentPoolTypeId(value: AgentPoolTypeId) {
+  return applyAgentIdStyle(value);
+}
+export function agentId(value: AgentId | AgentPoolTypeId) {
+  return applyAgentIdStyle(value);
+}
+export function agentKind(value: string) {
+  return applyStyle(value, UIConfig.labels.agentKind);
+}
+export function agentType(value: string) {
+  return applyStyle(value, UIConfig.labels.agentType);
+}
+export function taskId(value: string) {
+  return applyStyle(value, UIConfig.labels.taskId);
+}
+export function desc(description: string) {
+  return applyStyle(description, UIConfig.labels.description);
+}
+export function tools(tools: AvailableTool[]) {
+  return applyToolsStyle(tools);
+}
+
+export function timestamp(timestamp: string) {
+  return applyStyle(timestamp, UIConfig.labels.timestamp);
+}
+
+export function eventType(event: string) {
+  return applyStyle(event, UIConfig.labels.eventType);
+}
+export function error(error: string) {
+  return applyStyle(error, UIConfig.labels.error);
+}
+
+export function input(input: string) {
+  return applyStyle(input, UIConfig.labels.input);
+}
+export function agentPool(agentPool: AgentPool): string {
+  return `${agentId(agentPool.agentConfig)} [${num(agentPool.poolStats.available)}/${num(agentPool.poolStats.poolSize)}]`;
+}
+export function agent(agent: Agent) {
+  return `${agentId(agent.agentId)} ${bool(agent.inUse, agent.inUse ? DEFAULT_VERSION : BUSY_IDLE)}`;
 }

@@ -9,7 +9,7 @@ import * as supervisor from "./agents/supervisor.js";
 import { createConsoleReader } from "./helpers/reader.js";
 import { TaskManager } from "./tasks/task-manager.js";
 import { getLogger, LoggerType } from "./helpers/tmux-logger.js";
-import { agentIdToString } from "./agents/utils.js";
+import { agentIdToString } from "./agents/agent-id.js";
 import { getAgentStateLogger } from "./agents/agent-state-logger.js";
 import { getTaskStateLogger } from "./tasks/task-state-logger.js";
 
@@ -24,7 +24,7 @@ const registry = new AgentRegistry<BeeAgent>({
       poolStats,
       toolsFactory,
     ): Promise<{ agentId: string; instance: BeeAgent }> {
-      const { kind: agentKind, type: agentType, instructions, description } = config;
+      const { agentKind: agentKind, agentType: agentType, instructions, description } = config;
       const num = poolStats.created + 1;
       const agentId = agentIdToString({ agentKind, agentType, num });
       const tools = config.tools == null ? toolsFactory.getAvailableToolsNames() : config.tools;
@@ -97,8 +97,8 @@ registry.registerToolsFactories([
 
 registry.registerAgentType({
   autoPopulatePool: false,
-  kind: AgentKindSchema.Enum.supervisor,
-  type: supervisor.AgentTypes.BOSS,
+  agentKind: AgentKindSchema.Enum.supervisor,
+  agentType: supervisor.AgentTypes.BOSS,
   instructions: "",
   description: "The boss supervisor agent that control whole app.",
   maxPoolSize: 1,
