@@ -19,8 +19,8 @@ new AgentMonitor({
     mouse: true,
     keys: true,
     vi: true,
-    border: { type: "line" },
-    label: " Agent Monitor ",
+    border: { type: "bg" },
+    label: "■■■ AGENT MONITOR ■■■",
   }),
 }).start();
 
@@ -35,7 +35,7 @@ new TaskMonitor({
     mouse: true,
     keys: true,
     vi: true,
-    border: { type: "line" },
-    label: " Task Monitor ",
+    border: { type: "bg" },
+    label: "■■■ TASK MONITOR ■■■",
   }),
 }).start();
