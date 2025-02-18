@@ -1,7 +1,8 @@
-import { Logger } from "bee-agent-framework/logger/logger";
 import { clone, isNonNullish } from "remeda";
 import { BaseToolsFactory } from "src/base/tools-factory.js";
 import { updateDeepPartialObject } from "src/utils/objects.js";
+import { WorkspaceResource } from "src/workspace/workspace-manager.js";
+import { WorkspaceRestorable } from "src/workspace/workspace-restorable.js";
 import {
   agentConfigIdToValue,
   agentIdToString,
@@ -15,6 +16,7 @@ import {
   AgentConfig,
   AgentConfigIdValue,
   AgentConfigPoolStats,
+  AgentConfigSchema,
   AgentConfigVersionValue,
   AgentIdValue,
   AgentKindEnum,
@@ -72,20 +74,10 @@ export interface AgentInstanceRef<TInstance> {
 
 export type AgentTypesMap = Map<AgentKindEnum, Set<string>>;
 
-/**
- * Registry for managing agent types, instances, and pools.
- * Provides functionality for:
- * - Registering and managing agent types
- * - Creating and destroying agent instances
- * - Managing pools of reusable agents
- * - Tracking agent lifecycle and utilization
- *
- * Usage:
- * - Whenever you need an agent first look if there already is an suitable agent type if not let register new one.
- *
- */
-export class AgentRegistry<TAgentInstance> {
-  private readonly logger: Logger;
+const AGENT_REGISTRY_USER = "agent_registry_user";
+const AGENT_REGISTRY_CONFIG_PATH = ["configs", "agent_registry.jsonl"] as const;
+
+export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
   /** Map of registered agent kind and their configurations */
   private agentConfigs: Map<AgentKindEnum, Map<AgentTypeValue, AgentConfig[]>>;
   /** Map of all agent instances */
@@ -115,13 +107,55 @@ export class AgentRegistry<TAgentInstance> {
     onAgentConfigCreated: (agentKind: AgentKindEnum, agentType: string) => void;
     agentLifecycle: AgentLifecycleCallbacks<TAgentInstance>;
   }) {
-    this.logger = Logger.root.child({ name: "AgentRegistry" });
+    super(AGENT_REGISTRY_CONFIG_PATH, AGENT_REGISTRY_USER);
     this.logger.info("Initializing AgentRegistry");
     this.lifecycleCallbacks = agentLifecycle;
     this.onAgentConfigCreated = onAgentConfigCreated;
     // Initialize agent pools for all agent kinds
     this.agentConfigs = new Map(AgentKindEnumSchema.options.map((kind) => [kind, new Map()]));
     this.agentPools = new Map(AgentKindEnumSchema.options.map((kind) => [kind, new Map()]));
+  }
+
+  restore(): void {
+    super.restore(AGENT_REGISTRY_USER);
+  }
+
+  protected restoreEntity(resource: WorkspaceResource, line: string): void {
+    this.logger.info(`Restoring previous state from ${resource.path}`);
+
+    let parsed;
+    try {
+      parsed = JSON.parse(line);
+    } catch (e) {
+      this.logger.error(e);
+      throw new Error(`Failed to parse JSON: ${line}`);
+    }
+
+    const agentConfigResult = AgentConfigSchema.safeParse(parsed);
+    if (agentConfigResult.success) {
+      this.createAgentConfig(agentConfigResult.data, false);
+      return;
+    }
+
+    this.logger.error(agentConfigResult, `Can't restore agent config`);
+    throw new Error(`Can't restore`);
+  }
+
+  protected getSerializedEntities(): string {
+    return Array.from(this.agentConfigs.entries())
+      .map(([agentKind, typeMap]) =>
+        Array.from(typeMap.entries()).map(([agentType, versions]) => {
+          const agentConfig = versions.at(-1);
+          if (!agentConfig) {
+            throw new Error(
+              `Agent config ${agentSomeIdToTypeValue({ agentKind, agentType })} has no version to serialize`,
+            );
+          }
+          return JSON.stringify(agentConfig);
+        }),
+      )
+      .flat()
+      .join("\n");
   }
 
   /**
@@ -204,6 +238,7 @@ export class AgentRegistry<TAgentInstance> {
 
   createAgentConfig(
     config: Omit<AgentConfig, "agentConfigVersion" | "agentConfigId">,
+    persist = true,
   ): AgentConfig {
     const { agentKind, agentType, maxPoolSize } = config;
     this.logger.info("Create new agent config", {
@@ -252,6 +287,10 @@ export class AgentRegistry<TAgentInstance> {
 
     this.initializeAgentPool(agentKind, agentType, agentConfigVersion);
     this.onAgentConfigCreated(agentKind, agentType);
+
+    if (persist) {
+      this.persist();
+    }
 
     return configVersioned;
   }
@@ -485,6 +524,22 @@ export class AgentRegistry<TAgentInstance> {
           .filter(isNonNullish),
       )
       .flat();
+  }
+
+  isAgentConfigExists(
+    agentKind: AgentKindEnum,
+    agentType: AgentTypeValue,
+    agentConfigVersion?: number,
+  ) {
+    let exists = false;
+    try {
+      this.getAgentConfig(agentKind, agentType, agentConfigVersion);
+      exists = true;
+    } catch (err) {
+      this.logger.warn(err, `Agent config doesn't exist`);
+    }
+
+    return exists;
   }
 
   getAgentConfig(

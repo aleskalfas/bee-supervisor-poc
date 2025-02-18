@@ -1,5 +1,4 @@
 import { FrameworkError } from "bee-agent-framework";
-import { Logger } from "bee-agent-framework/logger/logger";
 import { clone, isNonNullish, omit } from "remeda";
 import {
   FULL_ACCESS,
@@ -14,6 +13,7 @@ import { AgentIdValue, AgentKindEnum, AgentTypeValue } from "src/agents/registry
 import { agentStateLogger } from "src/agents/state/logger.js";
 import { taskStateLogger } from "src/tasks/state/logger.js";
 import { updateDeepPartialObject } from "src/utils/objects.js";
+import { WorkspaceResource } from "src/workspace/workspace-manager.js";
 import {
   stringToTaskRun,
   taskConfigIdToValue,
@@ -25,6 +25,8 @@ import {
   isTaskRunTerminationStatus,
   TaskConfig,
   TaskConfigIdValue,
+  TaskConfigOwnedResource,
+  TaskConfigOwnedResourceSchema,
   TaskConfigPoolStats,
   TaskConfigVersionValue,
   TaskKindEnum,
@@ -35,6 +37,7 @@ import {
   TaskRunTerminalStatusEnum,
   TaskTypeValue,
 } from "./dto.js";
+import { WorkspaceRestorable } from "src/workspace/workspace-restorable.js";
 
 export type TaskRunRuntime = TaskRun & {
   intervalId: NodeJS.Timeout | null;
@@ -42,11 +45,11 @@ export type TaskRunRuntime = TaskRun & {
 
 const TASK_MANAGER_RESOURCE = "task_manager";
 const TASK_MANAGER_USER = "task_manager_user";
+const TASK_MANAGER_CONFIG_PATH = ["configs", "task_manager.jsonl"] as const;
 
 const MAX_POOL_SIZE = 100;
 
-export class TaskManager {
-  private readonly logger: Logger;
+export class TaskManager extends WorkspaceRestorable {
   /** Map of registered task type and their configurations */
   private taskConfigs: Map<TaskKindEnum, Map<TaskTypeValue, TaskConfig[]>>;
   private taskRuns = new Map<TaskRunIdValue, TaskRunRuntime>();
@@ -91,7 +94,7 @@ export class TaskManager {
       maxHistoryEntries?: number;
     } = {},
   ) {
-    this.logger = Logger.root.child({ name: "TaskManager" });
+    super(TASK_MANAGER_CONFIG_PATH, TASK_MANAGER_USER);
     this.logger.info("Initializing TaskManager");
 
     this.ac = new ResourcesAccessControl(this.constructor.name, [TASK_MANAGER_USER]);
@@ -119,6 +122,56 @@ export class TaskManager {
         this.logger.error("Process next start task error", err);
       }
     }, 100); // Runs every 100ms (0.1 second)
+  }
+
+  protected restoreEntity(
+    resource: WorkspaceResource,
+    line: string,
+    actingAgentId: AgentIdValue,
+  ): void {
+    this.logger.info(`Restoring previous state from ${resource.path}`);
+    let parsed;
+    try {
+      parsed = JSON.parse(line);
+    } catch (e) {
+      this.logger.error(e);
+      throw new Error(`Failed to parse JSON: ${line}`);
+    }
+    const taskConfigResult = TaskConfigOwnedResourceSchema.safeParse(parsed);
+    if (taskConfigResult.success) {
+      this.createTaskConfig(
+        taskConfigResult.data.taskConfig,
+        taskConfigResult.data.ownerId,
+        actingAgentId,
+        false,
+      );
+      return;
+    }
+
+    this.logger.error(taskConfigResult, `Can't restore task config`);
+    throw new Error(`Can't restore`);
+  }
+
+  protected getSerializedEntities(): string {
+    return Array.from(this.taskConfigs.entries())
+      .map(([taskKind, typeMap]) =>
+        Array.from(typeMap.entries()).map(([taskType, versions]) => {
+          const taskConfig = versions.at(-1);
+          if (!taskConfig) {
+            throw new Error(
+              `Task ${taskSomeIdToTypeValue({ taskKind, taskType })} has no version to serialize`,
+            );
+          }
+          const { ownerId } = this.ac.getResourcePermissionsByAdmin(
+            taskConfig.taskConfigId,
+            TASK_MANAGER_USER,
+          )!;
+          const config = { ownerId, taskConfig } satisfies TaskConfigOwnedResource;
+          return JSON.stringify(config);
+        }),
+      )
+      .flat()
+      .join("\n");
   }
 
   registerAdminAgent(agentId: AgentIdValue) {
@@ -318,6 +371,7 @@ export class TaskManager {
     config: Omit<TaskConfig, "taskConfigVersion" | "taskConfigId" | "ownerAgentId">,
     ownerAgentId: string,
     actingAgentId: AgentIdValue,
+    persist = true,
   ): TaskConfig {
     const { taskKind, taskType, maxRepeats: maxRuns } = config;
     this.logger.info("Create new task config", {
@@ -363,6 +417,10 @@ export class TaskManager {
     });
 
     this.initializeTaskPool(taskKind, taskType, taskConfigVersion);
+
+    if (persist) {
+      this.persist();
+    }
 
     return configVersioned;
   }
@@ -490,6 +548,7 @@ export class TaskManager {
       config: newConfigVersion,
     });
 
+    this.persist();
     return newConfigVersion;
   }
 
@@ -553,6 +612,8 @@ export class TaskManager {
     if (!this.getTaskConfigMap(taskKind).size) {
       this.taskConfigs.delete(taskKind);
     }
+
+    this.persist();
   }
 
   createTaskRun(

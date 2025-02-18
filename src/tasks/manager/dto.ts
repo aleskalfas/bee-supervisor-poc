@@ -84,6 +84,12 @@ export const TaskConfigSchema = z
 
 export type TaskConfig = z.infer<typeof TaskConfigSchema>;
 
+export const TaskConfigOwnedResourceSchema = z.object({
+  taskConfig: TaskConfigSchema,
+  ownerId: z.string(),
+});
+export type TaskConfigOwnedResource = z.infer<typeof TaskConfigOwnedResourceSchema>;
+
 export const TaskRunTerminalStatusEnumSchema = z.enum(["STOPPED", "FAILED", "COMPLETED"]);
 export type TaskRunTerminalStatusEnum = z.infer<typeof TaskRunTerminalStatusEnumSchema>;
 

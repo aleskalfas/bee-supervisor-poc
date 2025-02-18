@@ -11,10 +11,16 @@ import * as supervisor from "./agents/supervisor.js";
 import { createConsoleReader } from "./helpers/reader.js";
 import { TaskManager } from "./tasks/manager/manager.js";
 import { taskStateLogger } from "./tasks/state/logger.js";
+import { WorkspaceManager } from "./workspace/workspace-manager.js";
 
 // Reset audit logs
 agentStateLogger();
 taskStateLogger();
+
+const workspaceManager = WorkspaceManager.getInstance();
+// Setup workspace
+workspaceManager.setWorkspaceDirPath(["workspaces"]);
+workspaceManager.setWorkspace("default");
 
 const registry = new AgentRegistry<BeeAgent>({
   agentLifecycle: {
@@ -91,15 +97,21 @@ registry.registerToolsFactories([
   ["operator", new operator.ToolsFactory()],
 ]);
 
-registry.createAgentConfig({
-  autoPopulatePool: false,
-  agentKind: AgentKindEnumSchema.Enum.supervisor,
-  agentType: supervisor.AgentTypes.BOSS,
-  instructions: "",
-  tools: registry.getToolsFactory(AgentKindEnumSchema.Enum.supervisor).getAvailableToolsNames(),
-  description: "The boss supervisor agent that control whole app.",
-  maxPoolSize: 1,
-});
+registry.restore();
+
+if (
+  !registry.isAgentConfigExists(AgentKindEnumSchema.Enum.supervisor, supervisor.AgentTypes.BOSS)
+) {
+  registry.createAgentConfig({
+    autoPopulatePool: false,
+    agentKind: AgentKindEnumSchema.Enum.supervisor,
+    agentType: supervisor.AgentTypes.BOSS,
+    instructions: "",
+    tools: registry.getToolsFactory(AgentKindEnumSchema.Enum.supervisor).getAvailableToolsNames(),
+    description: "The boss supervisor agent that control whole app.",
+    maxPoolSize: 1,
+  });
+}
 
 const { instance: supervisorAgent, agentId: supervisorAgentId } = await registry.acquireAgent(
   AgentKindEnumSchema.Enum.supervisor,
@@ -107,6 +119,7 @@ const { instance: supervisorAgent, agentId: supervisorAgentId } = await registry
 );
 
 taskManager.registerAdminAgent(supervisorAgentId);
+taskManager.restore(supervisorAgentId);
 
 // Can you create tasks to write poem about: sun, earth, mars and assign them to the right agent type and run them?
 // Can you create agent type that will write the best poems on different topics, then create tasks to create poem about: sun, night, water. Assign them to the right agent types run all tasks and give me the created poems when it will be all finished?
@@ -122,6 +135,7 @@ taskManager.registerAdminAgent(supervisorAgentId);
 
 // Can you create different kinds of specialized agents that will do a research on different aspects of person profile from internet? You should be very specific and explanatory in their instructions. Don't create any tasks.
 // Base on these agents can you prepare related tasks. And one extra agent and task that will summarize task outputs other tasks.
+// Can you create a personal profile of Dario Gil?
 
 const reader = createConsoleReader({ fallback: "What is the current weather in Las Vegas?" });
 for await (const { prompt } of reader) {

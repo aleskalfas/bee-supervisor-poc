@@ -59,6 +59,11 @@ export class ResourcesAccessControl {
     });
   }
 
+  public getResourcePermissionsByAdmin(resourceId: ResourceId, actingUserId: UserId) {
+    this.checkPermission(REGISTRY_RESOURCE, actingUserId, ["read"]);
+    return clone(this.getResourcePermissions(resourceId));
+  }
+
   private getResourcePermissions(resourceId: ResourceId, throwError = true) {
     const resourcePermissions = this.registry.resources.get(resourceId);
     if (!resourcePermissions && throwError) {

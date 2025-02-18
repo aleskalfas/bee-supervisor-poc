@@ -1,0 +1,2 @@
+{"agentConfigId":"supervisor:boss:1","agentConfigVersion":1,"agentKind":"supervisor","agentType":"boss","instructions":"","description":"The boss supervisor agent that control whole app.","tools":["agent_registry","task_runner"],"maxPoolSize":1,"autoPopulatePool":false}
+{"agentConfigId":"operator:poem_generator:1","agentConfigVersion":1,"agentType":"poem_generator","instructions":"Generate a poem based on the input topic.","description":"An agent that generates poems on a given topic.","tools":[],"maxPoolSize":5,"autoPopulatePool":true,"agentKind":"operator"}
