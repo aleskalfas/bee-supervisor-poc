@@ -7,7 +7,18 @@ import {
   ToolInput,
 } from "bee-agent-framework/tools/base";
 import { z } from "zod";
-import { TaskConfigSchema, TaskHistoryEntry, TaskManager, TaskStatus } from "./task-manager.js";
+import {
+  ActingAgentIdValueSchema,
+  TaskConfig,
+  TaskConfigPoolStats,
+  TaskConfigSchema,
+  TaskKindEnumSchema,
+  TaskRun,
+  TaskRunHistoryEntry,
+  TaskRunIdValueSchema,
+  TaskTypeValueSchema,
+} from "./manager/dto.js";
+import { TaskManager } from "./manager/manager.js";
 
 export const TOOL_NAME = "task_runner";
 
@@ -18,9 +29,11 @@ export interface TaskManagerToolInput extends BaseToolOptions {
 export type TaskManagerToolResultData =
   | void
   | boolean
-  | TaskStatus
-  | TaskStatus[]
-  | TaskHistoryEntry[];
+  | TaskConfig
+  | [TaskConfigPoolStats, [number, TaskConfigPoolStats][]]
+  | TaskRun
+  | TaskRun[]
+  | TaskRunHistoryEntry[];
 
 export interface TaskManagerToolResult {
   method: string;
@@ -28,68 +41,128 @@ export interface TaskManagerToolResult {
   data: TaskManagerToolResultData;
 }
 
-export const ScheduleTaskSchema = z
+export const CreateTaskConfigSchema = z
   .object({
-    method: z.literal("scheduleTask"),
-    task: TaskConfigSchema,
-    supervisorAgentId: z.string(),
+    method: z.literal("createTaskConfig"),
+    taskConfig: TaskConfigSchema.omit({
+      taskConfigId: true,
+      taskConfigVersion: true,
+      ownerAgentId: true,
+    }),
+    actingAgentId: ActingAgentIdValueSchema,
+  })
+  .describe("Creates a new task configuration.");
+
+export const GetTaskConfigSchema = z
+  .object({
+    method: z.literal("getTaskConfig"),
+    taskKind: z.literal(TaskKindEnumSchema.Enum.operator),
+    taskType: TaskTypeValueSchema,
+    actingAgentId: ActingAgentIdValueSchema,
+  })
+  .describe("Get latest task configuration for specific task kind and type.");
+
+export const UpdateTaskConfigSchema = z
+  .object({
+    method: z.literal("updateTaskConfig"),
+    taskKind: z.literal(TaskKindEnumSchema.Enum.operator),
+    taskType: TaskTypeValueSchema,
+    update: TaskConfigSchema.partial().pick({
+      taskConfigInput: true,
+      description: true,
+      intervalMs: true,
+      runImmediately: true,
+      maxRepeats: true,
+      maxRetries: true,
+      retryDelayMs: true,
+      concurrencyMode: true,
+    }),
+    actingAgentId: ActingAgentIdValueSchema,
+  })
+  .describe("Update an existing task configuration.");
+
+export const DestroyTaskConfigSchema = z
+  .object({
+    method: z.literal("destroyTaskConfig"),
+    taskKind: z.literal(TaskKindEnumSchema.Enum.operator),
+    taskType: TaskTypeValueSchema,
+    actingAgentId: ActingAgentIdValueSchema,
+  })
+  .describe("Destroy an existing task configuration with all related task runs.");
+
+export const GetPoolStatsSchema = z
+  .object({
+    method: z.literal("getPoolStats"),
+    taskKind: z.literal(TaskKindEnumSchema.Enum.operator),
+    taskType: TaskTypeValueSchema,
+    actingAgentId: ActingAgentIdValueSchema,
   })
   .describe(
-    "Creates a new task with specified configuration. Requires owner or admin permissions.",
+    "Get statistics about the task run's pool for a specific task configuration kind and type",
   );
 
-export const StartTaskSchema = z
+export const CreateTaskRunSchema = z
   .object({
-    method: z.literal("startTask"),
-    taskId: z.string(),
-    supervisorAgentId: z.string(),
+    method: z.literal("createTaskRun"),
+    taskKind: z.literal(TaskKindEnumSchema.Enum.operator),
+    taskType: TaskTypeValueSchema,
+    taskRunInput: z.string().describe(`Task input specific for the run.`),
+    actingAgentId: ActingAgentIdValueSchema,
   })
-  .describe("Starts periodic execution of a task. Requires owner or admin permissions.");
+  .describe("Creates a new task run from task configuration.");
 
-export const StopTaskSchema = z
+export const ScheduleStartTaskRunSchema = z
   .object({
-    method: z.literal("stopTask"),
-    taskId: z.string(),
-    supervisorAgentId: z.string(),
+    method: z.literal("scheduleStartTaskRun"),
+    taskRunId: TaskRunIdValueSchema,
+    actingAgentId: ActingAgentIdValueSchema,
   })
-  .describe("Stops periodic execution of a task. Requires owner or admin permissions.");
+  .describe("Starts a task run.");
 
-export const RemoveTaskSchema = z
+export const StopTaskRunSchema = z
   .object({
-    method: z.literal("removeTask"),
-    taskId: z.string(),
-    supervisorAgentId: z.string(),
+    method: z.literal("stopTaskRun"),
+    taskRunId: z.string(),
+    actingAgentId: ActingAgentIdValueSchema,
   })
-  .describe("Removes a task completely. Requires owner or admin permissions.");
+  .describe("Stop a task run.");
 
-export const GetTaskStatusSchema = z
+export const RemoveTaskRunSchema = z
   .object({
-    method: z.literal("getTaskStatus"),
-    taskId: z.string(),
-    supervisorAgentId: z.string(),
+    method: z.literal("removeTaskRun"),
+    taskRunId: z.string(),
+    actingAgentId: ActingAgentIdValueSchema,
   })
-  .describe("Gets current status of a task. Requires agent permissions.");
+  .describe("Removes task run.");
 
-export const GetAllTaskStatusesSchema = z
+export const GetTaskRunSchema = z
   .object({
-    method: z.literal("getAllTaskStatuses"),
-    supervisorAgentId: z.string(),
+    method: z.literal("getTaskRun"),
+    taskRunId: z.string(),
+    actingAgentId: ActingAgentIdValueSchema,
   })
-  .describe("Gets status of all accessible tasks. Requires agent permissions.");
+  .describe("Gets current state of the task run.");
 
-export const IsTaskOccupiedSchema = z
+export const GetAllTaskRunsSchema = z
   .object({
-    method: z.literal("isTaskOccupied"),
-    taskId: z.string(),
-    supervisorAgentId: z.string(),
+    method: z.literal("getAllTaskRuns"),
+    actingAgentId: ActingAgentIdValueSchema,
   })
-  .describe("Checks if a task is currently occupied. Requires current agent or owner permissions.");
+  .describe("Gets current state of all accessible task runs.");
 
-export const GetTaskHistorySchema = z
+export const IsTaskRunOccupiedSchema = z
   .object({
-    method: z.literal("getTaskHistory"),
-    taskId: z.string(),
-    supervisorAgentId: z.string(),
+    method: z.literal("isTaskRunOccupied"),
+    taskRunId: z.string(),
+    actingAgentId: ActingAgentIdValueSchema,
+  })
+  .describe("Checks if a task run is currently occupied.");
+
+export const GetTaskRunHistorySchema = z
+  .object({
+    method: z.literal("getTaskRunHistory"),
+    taskRunId: z.string(),
+    actingAgentId: ActingAgentIdValueSchema,
     options: z
       .object({
         limit: z.number().optional(),
@@ -128,48 +201,75 @@ export class TaskManagerTool extends Tool<
 
   inputSchema() {
     return z.discriminatedUnion("method", [
-      ScheduleTaskSchema,
-      StartTaskSchema,
-      StopTaskSchema,
-      RemoveTaskSchema,
-      GetTaskStatusSchema,
-      GetAllTaskStatusesSchema,
-      IsTaskOccupiedSchema,
-      GetTaskHistorySchema,
+      CreateTaskConfigSchema,
+      UpdateTaskConfigSchema,
+      GetTaskConfigSchema,
+      DestroyTaskConfigSchema,
+      GetPoolStatsSchema,
+      CreateTaskRunSchema,
+      ScheduleStartTaskRunSchema,
+      StopTaskRunSchema,
+      RemoveTaskRunSchema,
+      GetTaskRunSchema,
+      GetAllTaskRunsSchema,
+      IsTaskRunOccupiedSchema,
+      GetTaskRunHistorySchema,
     ]);
   }
 
   protected async _run(input: ToolInput<this>) {
     let data: TaskManagerToolResultData;
     switch (input.method) {
-      case "scheduleTask":
-        data = this.taskManager.scheduleTask(input.task, input.supervisorAgentId);
+      case "createTaskConfig": {
+        const { actingAgentId, taskConfig } = input;
+        data = this.taskManager.createTaskConfig(taskConfig, actingAgentId, actingAgentId);
         break;
-      case "startTask":
-        this.taskManager.scheduleTaskStart(input.taskId, input.supervisorAgentId);
-        data = true;
+      }
+      case "getTaskConfig": {
+        const { taskKind, taskType, actingAgentId } = input;
+        data = this.taskManager.getTaskConfig(taskKind, taskType, actingAgentId);
         break;
-      case "stopTask":
-        data = this.taskManager.stopTask(input.taskId, input.supervisorAgentId);
+      }
+      case "updateTaskConfig": {
+        const { update: config, taskKind, taskType, actingAgentId } = input;
+        data = this.taskManager.updateTaskConfig({ ...config, taskKind, taskType }, actingAgentId);
         break;
-      case "removeTask":
-        data = this.taskManager.removeTask(input.taskId, input.supervisorAgentId);
+      }
+      case "destroyTaskConfig": {
+        const { taskKind, taskType, actingAgentId } = input;
+        data = this.taskManager.destroyTaskConfig(taskKind, taskType, actingAgentId);
         break;
-      case "getTaskStatus":
-        data = this.taskManager.getTaskStatus(input.taskId, input.supervisorAgentId);
+      }
+      case "getPoolStats": {
+        const { taskKind, taskType, actingAgentId } = input;
+        data = this.taskManager.getPoolStats(taskKind, taskType, actingAgentId);
         break;
-      case "getAllTaskStatuses":
-        data = this.taskManager.getAllTaskStatuses(input.supervisorAgentId);
+      }
+      case "createTaskRun": {
+        const { taskKind, taskType, taskRunInput, actingAgentId } = input;
+        data = this.taskManager.createTaskRun(taskKind, taskType, taskRunInput, actingAgentId);
         break;
-      case "isTaskOccupied":
-        data = this.taskManager.isTaskOccupied(input.taskId, input.supervisorAgentId);
+      }
+      case "scheduleStartTaskRun":
+        data = this.taskManager.scheduleStartTaskRun(input.taskRunId, input.actingAgentId);
         break;
-      case "getTaskHistory":
-        data = this.taskManager.getTaskHistory(
-          input.taskId,
-          input.supervisorAgentId,
-          input.options,
-        );
+      case "stopTaskRun":
+        data = this.taskManager.stopTaskRun(input.taskRunId, input.actingAgentId);
+        break;
+      case "removeTaskRun":
+        data = this.taskManager.destroyTaskRun(input.taskRunId, input.actingAgentId);
+        break;
+      case "getTaskRun":
+        data = this.taskManager.getTaskRun(input.taskRunId, input.actingAgentId);
+        break;
+      case "getAllTaskRuns":
+        data = this.taskManager.getAllTaskRuns(input.actingAgentId);
+        break;
+      case "isTaskRunOccupied":
+        data = this.taskManager.isTaskRunOccupied(input.taskRunId, input.actingAgentId);
+        break;
+      case "getTaskRunHistory":
+        data = this.taskManager.getTaskRunHistory(input.taskRunId, input.actingAgentId);
         break;
     }
     return new JSONToolOutput({

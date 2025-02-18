@@ -3,30 +3,27 @@ import { FrameworkError } from "bee-agent-framework/errors";
 import "dotenv/config.js";
 
 import { createAgent } from "./agents/agent-factory.js";
-import { AgentKindSchema, AgentRegistry } from "./agents/agent-registry.js";
 import * as operator from "./agents/operator.js";
+import { AgentKindEnumSchema } from "./agents/registry/dto.js";
+import { AgentRegistry } from "./agents/registry/registry.js";
+import { agentStateLogger } from "./agents/state/logger.js";
 import * as supervisor from "./agents/supervisor.js";
 import { createConsoleReader } from "./helpers/reader.js";
-import { TaskManager } from "./tasks/task-manager.js";
-import { getLogger, LoggerType } from "./helpers/tmux-logger.js";
-import { agentIdToString } from "./agents/agent-id.js";
-import { getAgentStateLogger } from "./agents/agent-state-logger.js";
-import { getTaskStateLogger } from "./tasks/task-state-logger.js";
+import { TaskManager } from "./tasks/manager/manager.js";
+import { taskStateLogger } from "./tasks/state/logger.js";
 
 // Reset audit logs
-getAgentStateLogger();
-getTaskStateLogger();
+agentStateLogger();
+taskStateLogger();
 
 const registry = new AgentRegistry<BeeAgent>({
   agentLifecycle: {
     async onCreate(
       config,
-      poolStats,
+      agentId,
       toolsFactory,
     ): Promise<{ agentId: string; instance: BeeAgent }> {
-      const { agentKind: agentKind, agentType: agentType, instructions, description } = config;
-      const num = poolStats.created + 1;
-      const agentId = agentIdToString({ agentKind, agentType, num });
+      const { agentKind, agentType, instructions, description } = config;
       const tools = config.tools == null ? toolsFactory.getAvailableToolsNames() : config.tools;
       const instance = createAgent(
         {
@@ -46,17 +43,17 @@ const registry = new AgentRegistry<BeeAgent>({
       instance.destroy();
     },
   },
-  onAgentTypeRegistered(agentKind, agentType) {
+  onAgentConfigCreated(agentKind, agentType) {
     taskManager.registerAgentType(agentKind, agentType);
   },
 });
 
 const taskManager = new TaskManager(
-  async (task, taskManager, { onAgentCreate, onAgentComplete, onAgentError }) => {
-    const agent = await registry.acquireAgent(task.agentKind, task.agentType);
-    onAgentCreate(task.id, agent.agentId, taskManager);
+  async (taskRun, taskManager, { onAgentCreate, onAgentComplete, onAgentError }) => {
+    const agent = await registry.acquireAgent(taskRun.config.agentKind, taskRun.config.agentType);
+    onAgentCreate(taskRun.taskRunId, agent.agentId, taskManager);
     const { instance } = agent;
-    const prompt = task.input;
+    const prompt = taskRun.taskRunInput;
     instance
       .run(
         { prompt },
@@ -82,11 +79,10 @@ const taskManager = new TaskManager(
           );
         });
       })
-      .then((resp) => onAgentComplete(resp.result.text, task.id, agent.agentId, taskManager))
-      .catch((err) => onAgentError(err, task.id, agent.agentId, taskManager))
-      .finally(async () => {
-        await registry.releaseAgent(agent.agentId);
-      });
+      .then((resp) =>
+        onAgentComplete(resp.result.text, taskRun.taskRunId, agent.agentId, taskManager),
+      )
+      .catch((err) => onAgentError(err, taskRun.taskRunId, agent.agentId, taskManager));
   },
 );
 
@@ -95,19 +91,22 @@ registry.registerToolsFactories([
   ["operator", new operator.ToolsFactory()],
 ]);
 
-registry.registerAgentType({
+registry.createAgentConfig({
   autoPopulatePool: false,
-  agentKind: AgentKindSchema.Enum.supervisor,
+  agentKind: AgentKindEnumSchema.Enum.supervisor,
   agentType: supervisor.AgentTypes.BOSS,
   instructions: "",
+  tools: registry.getToolsFactory(AgentKindEnumSchema.Enum.supervisor).getAvailableToolsNames(),
   description: "The boss supervisor agent that control whole app.",
   maxPoolSize: 1,
 });
 
-const { instance: supervisorAgent } = await registry.acquireAgent(
-  AgentKindSchema.Enum.supervisor,
+const { instance: supervisorAgent, agentId: supervisorAgentId } = await registry.acquireAgent(
+  AgentKindEnumSchema.Enum.supervisor,
   supervisor.AgentTypes.BOSS,
 );
+
+taskManager.registerAdminAgent(supervisorAgentId);
 
 // Can you create tasks to write poem about: sun, earth, mars and assign them to the right agent type and run them?
 // Can you create agent type that will write the best poems on different topics, then create tasks to create poem about: sun, night, water. Assign them to the right agent types run all tasks and give me the created poems when it will be all finished?
@@ -121,7 +120,8 @@ const { instance: supervisorAgent } = await registry.acquireAgent(
 // Can you generate poem for each of these topics: love, day, night?
 // Can you get list of articles about each of these topics: deepseek, interstellar engine, agi?
 
-const supervisorLogger = getLogger(LoggerType.AGENT, "supervisor");
+// Can you create different kinds of specialized agents that will do a research on different aspects of person profile from internet? You should be very specific and explanatory in their instructions. Don't create any tasks.
+// Base on these agents can you prepare related tasks. And one extra agent and task that will summarize task outputs other tasks.
 
 const reader = createConsoleReader({ fallback: "What is the current weather in Las Vegas?" });
 for await (const { prompt } of reader) {
@@ -141,7 +141,7 @@ for await (const { prompt } of reader) {
       )
       .observe((emitter) => {
         emitter.on("update", (data, meta) => {
-          supervisorLogger;
+          // supervisorLogger;
           reader.write(
             `${(meta.creator as any).input.meta.name} 🤖 (${data.update.key}) :`,
             data.update.value,

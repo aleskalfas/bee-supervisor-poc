@@ -1,6 +1,6 @@
 import { Logger } from "bee-agent-framework";
 import { AnyTool } from "bee-agent-framework/tools/base";
-import { AvailableTool } from "src/agents/agent-registry.js";
+import { AvailableTool } from "src/agents/registry/dto.js";
 
 export type ToolFactoryMethod = () => AnyTool;
 

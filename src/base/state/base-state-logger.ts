@@ -1,18 +1,9 @@
-import { appendFileSync, existsSync, renameSync, writeFileSync } from "fs";
+import { appendFileSync, copyFileSync, existsSync, truncateSync, writeFileSync } from "fs";
 import { join } from "path";
+import { z } from "zod";
+import { LogInit, LogUpdate } from "./dto.js";
 
-export interface LogUpdate<TType, TData> {
-  timestamp: string;
-  type: TType;
-  data: TData;
-}
-
-export interface LogInit {
-  timestamp: string;
-  type: "@log_init";
-}
-
-export class BaseAuditLog<TType, TData, TLogUpdate extends LogUpdate<TType, TData>> {
+export class BaseStateLogger<TData extends z.ZodType> {
   protected logPath: string;
 
   constructor(logFileDefaultPath: readonly string[], logFileDefaultName: string, logPath?: string) {
@@ -36,10 +27,13 @@ export class BaseAuditLog<TType, TData, TLogUpdate extends LogUpdate<TType, TDat
       // Create backup file path
       const backupPath = this.logPath.replace(".log", `.${timestamp}.log`);
 
-      // Rename existing file to backup
-      renameSync(this.logPath, backupPath);
+      // Copy existing file to backup
+      copyFileSync(this.logPath, backupPath);
 
-      // Create new empty log file
+      // Clear the contents of the original file
+      truncateSync(this.logPath, 0);
+    } else {
+      // Create new empty log file if it doesn't exist
       writeFileSync(this.logPath, "");
     }
   }
@@ -48,7 +42,7 @@ export class BaseAuditLog<TType, TData, TLogUpdate extends LogUpdate<TType, TDat
     this.logUpdate({ type: "@log_init" });
   }
 
-  protected logUpdate(update: Omit<TLogUpdate, "timestamp"> | Omit<LogInit, "timestamp">) {
+  protected logUpdate(update: Omit<LogUpdate<TData>, "timestamp"> | Omit<LogInit, "timestamp">) {
     const timestamp = new Date().toISOString();
     appendFileSync(this.logPath, JSON.stringify({ ...update, timestamp }) + "\n");
   }

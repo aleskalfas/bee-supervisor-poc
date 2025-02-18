@@ -1,13 +1,13 @@
 import { getChatLLM } from "src/helpers/llm.js";
-import { AgentKind } from "./agent-registry.js";
 import * as supervisor from "./supervisor.js";
 import { BeeAgent } from "bee-agent-framework/agents/bee/agent";
 import { UnconstrainedMemory } from "bee-agent-framework/memory/unconstrainedMemory";
 import { TokenMemory } from "bee-agent-framework/memory/tokenMemory";
 import { BaseToolsFactory } from "src/base/tools-factory.js";
+import { AgentKindEnum } from "./registry/dto.js";
 
 export interface BaseCreateAgentInput {
-  agentKind: AgentKind;
+  agentKind: AgentKindEnum;
   agentType: string;
   agentId: string;
   instructions: string;
@@ -54,5 +54,7 @@ export function createAgent<TInput extends BaseCreateAgentInput>(
             }),
         },
       });
+    default:
+      throw new Error(`Undefined agent kind agentKind:${input.agentKind}`);
   }
 }
