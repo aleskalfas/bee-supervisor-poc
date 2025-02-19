@@ -109,7 +109,7 @@ export class TaskMonitor extends BaseMonitor {
     this.taskVersionsList = blessed.list({
       parent: this.parent,
       width: "30%",
-      height: "20%",
+      height: "30%",
       left: 0,
       top: "20%",
       border: { type: "line" },
@@ -127,9 +127,9 @@ export class TaskMonitor extends BaseMonitor {
     this.taskRunList = blessed.list({
       parent: this.parent,
       width: "30%",
-      height: "30%",
+      height: "40%",
       left: 0,
-      top: "40%",
+      top: "50%",
       border: { type: "line" },
       label: " Task Runs ",
       content: TASK_RUN_LIST_DEFAULT_TEXT,
@@ -146,7 +146,7 @@ export class TaskMonitor extends BaseMonitor {
     this.taskConfigDetail = blessed.box({
       parent: this.parent,
       width: "40%",
-      height: "20%",
+      height: "30%",
       left: "30%",
       top: 0,
       border: { type: "line" },
@@ -163,9 +163,9 @@ export class TaskMonitor extends BaseMonitor {
     this.taskRunDetail = blessed.box({
       parent: this.parent,
       width: "40%",
-      height: "50%",
+      height: "60%",
       left: "30%",
-      top: "20%",
+      top: "30%",
       border: { type: "line" },
       label: " Task Run Detail ",
       content: TASK_RUN_DETAIL_DEFAULT_TEXT,
@@ -181,9 +181,9 @@ export class TaskMonitor extends BaseMonitor {
     this.logBox = blessed.log({
       parent: this.parent,
       width: "100%",
-      height: "30%",
+      height: "10%",
       left: 0,
-      bottom: 0,
+      top: "90%",
       border: { type: "line" },
       label: " Live Updates ",
       tags: true,

@@ -128,7 +128,7 @@ export class AgentMonitor extends BaseMonitor {
     this.agentList = blessed.list({
       parent: this.parent,
       width: "30%",
-      height: "30%",
+      height: "50%",
       left: 0,
       top: "40%",
       border: { type: "line" },
@@ -164,7 +164,7 @@ export class AgentMonitor extends BaseMonitor {
     this.agentDetail = blessed.box({
       parent: this.parent,
       width: "40%",
-      height: "30%",
+      height: "50%",
       left: "30%",
       top: "40%",
       border: { type: "line" },
@@ -182,8 +182,8 @@ export class AgentMonitor extends BaseMonitor {
     this.lifecycleHistory = blessed.box({
       parent: this.parent,
       width: "30%",
-      height: "70%",
-      right: 0,
+      height: "90%",
+      left: "70%",
       top: 0,
       border: { type: "line" },
       label: " Lifecycle Events ",
@@ -200,9 +200,9 @@ export class AgentMonitor extends BaseMonitor {
     this.logBox = blessed.log({
       parent: this.parent,
       width: "100%",
-      height: "30%",
+      height: "10%",
       left: 0,
-      bottom: 0,
+      top: "90%",
       border: { type: "line" },
       label: " Live Updates ",
       tags: true,
