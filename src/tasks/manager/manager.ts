@@ -14,12 +14,8 @@ import { agentStateLogger } from "src/agents/state/logger.js";
 import { taskStateLogger } from "src/tasks/state/logger.js";
 import { updateDeepPartialObject } from "src/utils/objects.js";
 import { WorkspaceResource } from "src/workspace/workspace-manager.js";
-import {
-  stringToTaskRun,
-  taskConfigIdToValue,
-  taskRunIdToString,
-  taskSomeIdToTypeValue,
-} from "../task-id.js";
+import { WorkspaceRestorable } from "src/workspace/workspace-restorable.js";
+import { taskConfigIdToValue, taskRunIdToString, taskSomeIdToTypeValue } from "../task-id.js";
 import {
   isTaskRunActiveStatus,
   isTaskRunTerminationStatus,
@@ -37,7 +33,6 @@ import {
   TaskRunTerminalStatusEnum,
   TaskTypeValue,
 } from "./dto.js";
-import { WorkspaceRestorable } from "src/workspace/workspace-restorable.js";
 
 export type TaskRunRuntime = TaskRun & {
   intervalId: NodeJS.Timeout | null;
@@ -794,11 +789,7 @@ export class TaskManager extends WorkspaceRestorable {
 
   stopTaskRun(taskRunId: TaskRunIdValue, actingAgentId: AgentIdValue, isCompleted = false): void {
     this.logger.info("Stopping task", { taskRunId, actingAgentId });
-    this.ac.checkPermission(
-      taskSomeIdToTypeValue(stringToTaskRun(taskRunId)),
-      actingAgentId,
-      READ_WRITE_ACCESS,
-    );
+    this.ac.checkPermission(taskRunId, actingAgentId, READ_WRITE_ACCESS);
 
     const taskRun = this.getTaskRun(taskRunId, actingAgentId);
     if (taskRun.status === "STOPPED") {
@@ -1099,15 +1090,19 @@ export class TaskManager extends WorkspaceRestorable {
           maxRuns: taskRun.config.maxRepeats,
         });
 
-        taskManager.releaseTaskRunOccupancy(taskRunId, agentId);
         // Check if we've reached maxRuns
-        if (taskRun.config.maxRepeats && taskRun.completedRuns >= taskRun.config.maxRepeats) {
-          taskManager.stopTaskRun(taskRunId, taskRun.config.ownerAgentId);
+        if (
+          !taskRun.config.maxRepeats ||
+          (taskRun.config.maxRepeats && taskRun.completedRuns >= taskRun.config.maxRepeats)
+        ) {
+          taskManager.stopTaskRun(taskRunId, agentId);
           taskManager.logger.info("Task reached maximum runs and has been stopped", {
             taskRunId,
             completedRuns: taskRun.completedRuns,
             maxRuns: taskRun.config.maxRepeats,
           });
+        } else {
+          taskManager.releaseTaskRunOccupancy(taskRunId, agentId);
         }
       },
       async onAgentError(err, taskRunId, agentId, taskManager) {

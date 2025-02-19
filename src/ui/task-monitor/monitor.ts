@@ -85,8 +85,7 @@ export class TaskMonitor extends BaseMonitor {
     });
 
     this.stateBuilder.on("error", (error: Error) => {
-      // OK
-      console.error("Error occurred:", error);
+      this.logBox.log(`Error occurred: ${JSON.stringify(error)}`);
     });
 
     // Left column - Pools and Task Runs (70%)
@@ -459,6 +458,8 @@ export class TaskMonitor extends BaseMonitor {
       `${st.label("Version")}:  ${st.versionNum(taskConfig.taskConfigVersion)}`,
       `${st.label("Task Kind")}:  ${st.taskKind(taskConfig.taskKind)}`,
       `${st.label("Task Type")}:  ${st.taskType(taskConfig.taskType)}`,
+      `${st.label("Max Repeats")}:  ${st.num(taskConfig.maxRepeats || 0)}`,
+      `${st.label("Interval ms")}:  ${st.num(taskConfig.intervalMs)}`,
       `${st.label("Concurrency Mode")}:  ${st.concurrencyMode(taskConfig.concurrencyMode)}`,
       "",
       `${st.label("Description")}: `,

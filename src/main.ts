@@ -88,7 +88,12 @@ const taskManager = new TaskManager(
       .then((resp) =>
         onAgentComplete(resp.result.text, taskRun.taskRunId, agent.agentId, taskManager),
       )
-      .catch((err) => onAgentError(err, taskRun.taskRunId, agent.agentId, taskManager));
+      .catch((err) => {
+        onAgentError(err, taskRun.taskRunId, agent.agentId, taskManager);
+      })
+      .finally(() => {
+        registry.releaseAgent(agent.agentId);
+      });
   },
 );
 

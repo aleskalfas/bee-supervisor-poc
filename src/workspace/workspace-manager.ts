@@ -213,6 +213,10 @@ export class WorkspaceManager extends EventEmitter {
     try {
       // Read file content synchronously
       const content = readFileSync(resource.path, { encoding: "utf8" });
+      if (content.length === 0) {
+        // Nothing to parse
+        return;
+      }
 
       // Split content into lines and process each line
       const lines = content.split(/\r?\n/);
