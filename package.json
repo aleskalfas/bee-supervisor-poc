@@ -1,5 +1,5 @@
 {
-  "name": "bee-empty",
+  "name": "bee-supervisor",
   "type": "module",
   "version": "0.0.1",
   "private": true,
@@ -10,21 +10,19 @@
   "files": [
     "dist/**/*"
   ],
-  "main": "./dist/agent.js",
-  "types": "./dist/agent.d.ts",
-  "homepage": "https://github.com/i-am-bee/bee-agent-framework-starter#readme",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "homepage": "https://github.com/aleskalfas/bee-supervisor-poc#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/i-am-bee/bee-agent-framework-starter.git"
+    "url": "git+https://github.com/aleskalfas/bee-supervisor-poc.git"
   },
   "bugs": {
-    "url": "https://github.com/i-am-bee/bee-agent-framework-starter/issues"
+    "url": "https://github.com/aleskalfas/bee-supervisor-poc/issues"
   },
   "scripts": {
-    "start": "NODE_ENV=development npm run startx",
-    "startx": "chmod +x ./start.sh && ./start.sh",
     "start:dev": "tsx --inspect --no-warnings src/main.js",
-    "monitor": "tsx --no-warnings src/ui/supervisor-monitor.js",
+    "monitor": "tsx --no-warnings src/ui/main.js",
     "ts:check": "tsc --noEmit --project tsconfig.json",
     "build": "rimraf dist && tsc",
     "lint": "eslint",

@@ -43,6 +43,23 @@ export class WorkspaceManager extends EventEmitter {
   private _workspacePath?: string;
   private resources = new Map<DirPath, WorkspaceResource>();
 
+  static init(dirPath: string[], workspace: string) {
+    if (this.instance) {
+      throw new Error(`Workspace manager is already initialized`);
+    }
+    this.instance = new WorkspaceManager();
+    this.instance.setWorkspaceDirPath(dirPath);
+    this.instance.setWorkspace(workspace);
+    return this.instance;
+  }
+
+  static getInstance() {
+    if (!this.instance) {
+      throw new Error(`Workspace manager wasn't initialized yet`);
+    }
+    return this.instance;
+  }
+
   get workspaceName() {
     if (!this._workspaceName) {
       throw Error(`Workspace wasn't set yet`);
@@ -74,15 +91,6 @@ export class WorkspaceManager extends EventEmitter {
       throw new Error(`Workspace directory ${joinedPath} doesn't exists`);
     }
     this._workspacesDirPath = joinedPath;
-  }
-
-  static getInstance() {
-    let instance = WorkspaceManager.instance;
-    if (!instance) {
-      instance = WorkspaceManager.instance = new WorkspaceManager();
-    }
-
-    return instance;
   }
 
   private constructor() {

@@ -1,26 +1,23 @@
+import "dotenv/config.js";
 import { BeeAgent } from "bee-agent-framework/agents/bee/agent";
 import { FrameworkError } from "bee-agent-framework/errors";
-import "dotenv/config.js";
 
 import { createAgent } from "./agents/agent-factory.js";
-import * as operator from "./agents/operator.js";
 import { AgentKindEnumSchema } from "./agents/registry/dto.js";
 import { AgentRegistry } from "./agents/registry/registry.js";
-import { agentStateLogger } from "./agents/state/logger.js";
-import * as supervisor from "./agents/supervisor.js";
+import { TaskManager } from "@tasks/manager/manager.js";
+import { AgentStateLogger } from "@agents/state/logger.js";
+import { TaskStateLogger } from "@tasks/state/logger.js";
+import { supervisor, operator } from "@agents/index.js";
 import { createConsoleReader } from "./helpers/reader.js";
-import { TaskManager } from "./tasks/manager/manager.js";
-import { taskStateLogger } from "./tasks/state/logger.js";
-import { WorkspaceManager } from "./workspace/workspace-manager.js";
+import { WorkspaceManager } from "@workspaces/workspace-manager.js";
 
 // Reset audit logs
-agentStateLogger();
-taskStateLogger();
+AgentStateLogger.init();
+TaskStateLogger.init();
 
-const workspaceManager = WorkspaceManager.getInstance();
 // Setup workspace
-workspaceManager.setWorkspaceDirPath(["workspaces"]);
-workspaceManager.setWorkspace("default");
+WorkspaceManager.init(["workspaces"], "default");
 
 const registry = new AgentRegistry<BeeAgent>({
   agentLifecycle: {

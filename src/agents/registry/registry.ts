@@ -1,8 +1,6 @@
 import { clone, isNonNullish } from "remeda";
 import { BaseToolsFactory } from "src/base/tools-factory.js";
 import { updateDeepPartialObject } from "src/utils/objects.js";
-import { WorkspaceResource } from "src/workspace/workspace-manager.js";
-import { WorkspaceRestorable } from "src/workspace/workspace-restorable.js";
 import {
   agentConfigIdToValue,
   agentIdToString,
@@ -10,7 +8,6 @@ import {
   agentSomeIdToTypeValue,
   stringToAgentConfig,
 } from "../agent-id.js";
-import { agentStateLogger } from "../state/logger.js";
 import {
   Agent,
   AgentConfig,
@@ -24,6 +21,9 @@ import {
   AgentTypeValue,
   AgentWithInstance,
 } from "./dto.js";
+import { AgentStateLogger } from "@agents/state/logger.js";
+import { WorkspaceResource } from "@workspaces/workspace-manager.js";
+import { WorkspaceRestorable } from "@workspaces/workspace-restorable.js";
 
 /**
  * Callbacks for managing agent lifecycle events.
@@ -95,6 +95,7 @@ export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
   private poolsCleanupJobIntervalId: NodeJS.Timeout | null = null;
   private poolsCleanupJobExecuting = false;
   private poolsToCleanup: string[] = [];
+  private stateLogger: AgentStateLogger;
 
   /**
    * Creates a new AgentRegistry instance
@@ -109,6 +110,7 @@ export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
   }) {
     super(AGENT_REGISTRY_CONFIG_PATH, AGENT_REGISTRY_USER);
     this.logger.info("Initializing AgentRegistry");
+    this.stateLogger = AgentStateLogger.getInstance();
     this.lifecycleCallbacks = agentLifecycle;
     this.onAgentConfigCreated = onAgentConfigCreated;
     // Initialize agent pools for all agent kinds
@@ -165,7 +167,7 @@ export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
   registerToolsFactories(tuples: [AgentKindEnum, BaseToolsFactory][]) {
     tuples.map(([agentKind, factory]) => {
       this.toolsFactory.set(agentKind, factory);
-      agentStateLogger().logAvailableTools({
+      this.stateLogger.logAvailableTools({
         agentKindId: agentSomeIdToKindValue({ agentKind }),
         availableTools: factory.getAvailableTools(),
       });
@@ -279,7 +281,7 @@ export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
     });
     const configVersioned = { ...config, agentConfigId, agentConfigVersion };
     agentTypesMap.set(agentType, [configVersioned]);
-    agentStateLogger().logAgentConfigCreate({
+    this.stateLogger.logAgentConfigCreate({
       agentConfigId,
       agentType: agentSomeIdToTypeValue(configVersioned),
       config: configVersioned,
@@ -343,7 +345,7 @@ export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
     this.initializeAgentPool(agentKind, agentType, agentConfigVersion);
     this.lookupPoolsToClean();
 
-    agentStateLogger().logAgentConfigUpdate({
+    this.stateLogger.logAgentConfigUpdate({
       agentType: agentSomeIdToTypeValue(newConfigVersion),
       agentConfigId: newConfigVersion.agentConfigId,
       config: newConfigVersion,
@@ -628,7 +630,7 @@ export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
       agentKind,
       agentType,
     });
-    agentStateLogger().logAgentConfigDestroy({
+    this.stateLogger.logAgentConfigDestroy({
       agentConfigId,
       agentType: agentTypeId,
     });
@@ -702,12 +704,12 @@ export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
       this.logger.trace("Executing onAcquire callback", { agentId });
       await this.lifecycleCallbacks.onAcquire(agentId);
     }
-    agentStateLogger().logAgentAcquire({
+    this.stateLogger.logAgentAcquire({
       agentId: agent.agentId,
     });
 
     const [poolStats, versions] = this.getPoolStats(agent.agentKind, agent.agentType);
-    agentStateLogger().logPoolChange({
+    this.stateLogger.logPoolChange({
       agentTypeId: agentSomeIdToTypeValue(agent),
       poolStats,
       versions,
@@ -747,12 +749,12 @@ export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
     agent.inUse = false;
     pool.add(agentId);
     this.logger.debug("Agent released back to pool", { agentId, agentType: agent.agentType });
-    agentStateLogger().logAgentRelease({
+    this.stateLogger.logAgentRelease({
       agentId: agent.agentId,
     });
 
     const [poolStats, versions] = this.getPoolStats(agent.agentKind, agent.agentType);
-    agentStateLogger().logPoolChange({
+    this.stateLogger.logPoolChange({
       agentTypeId: agentSomeIdToTypeValue(agent),
       poolStats,
       versions,
@@ -800,13 +802,13 @@ export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
 
     this.logger.info("Agent created successfully", { agentId, agentType, agentKind });
 
-    agentStateLogger().logAgentCreate({
+    this.stateLogger.logAgentCreate({
       agentId: agentId,
       agentConfigId: config.agentConfigId,
     });
 
     const [poolStats, versions] = this.getPoolStats(agentKind, agentType);
-    agentStateLogger().logPoolChange({
+    this.stateLogger.logPoolChange({
       agentTypeId: agentSomeIdToTypeValue(agent),
       poolStats,
       versions,
@@ -854,12 +856,12 @@ export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
       agentConfigVersion,
     });
 
-    agentStateLogger().logAgentDestroy({
+    this.stateLogger.logAgentDestroy({
       agentId,
     });
 
     const [poolStats, versions] = this.getPoolStats(agentKind, agentType);
-    agentStateLogger().logPoolChange({
+    this.stateLogger.logPoolChange({
       agentTypeId: agentSomeIdToTypeValue(agent),
       poolStats,
       versions,

@@ -9,6 +9,8 @@
     "incremental": false,
     "moduleDetection": "auto",
     "types": ["node"],
+    "declaration": true,
+    "declarationMap": true,
     "sourceMap": true,
     "allowJs": true,
     "outDir": "./dist",
@@ -18,7 +20,15 @@
     "useUnknownInCatchVariables": false,
     "strict": true,
     "skipLibCheck": true,
-    "strictNullChecks": true
+    "strictNullChecks": true,
+    "removeComments": false,
+    "forceConsistentCasingInFileNames": true,
+    "paths": {
+      "@agents/*": ["src/agents/*"],
+      "@tasks/*": ["src/tasks/*"],
+      "@workspaces/*": ["src/workspaces/*"],
+      "@ui/*": ["src/ui/*"]
+    }
   },
   "include": ["src"]
 }

@@ -20,7 +20,24 @@ import {
 export const DEFAULT_NAME = "agent_state";
 export const DEFAULT_PATH = ["logs"] as readonly string[];
 
-class AgentStateLogger extends BaseStateLogger<typeof AgentStateDataTypeSchema> {
+export class AgentStateLogger extends BaseStateLogger<typeof AgentStateDataTypeSchema> {
+  private static instance?: AgentStateLogger;
+
+  static init() {
+    if (this.instance) {
+      throw new Error(`Agent state logger is already initialized`);
+    }
+    this.instance = new AgentStateLogger();
+    return this.instance;
+  }
+
+  static getInstance() {
+    if (!this.instance) {
+      throw new Error(`Agent state logger wasn't initialized yet`);
+    }
+    return this.instance;
+  }
+
   constructor(logPath?: string) {
     super(DEFAULT_PATH, DEFAULT_NAME, logPath);
   }
@@ -137,11 +154,10 @@ class AgentStateLogger extends BaseStateLogger<typeof AgentStateDataTypeSchema> 
   }
 }
 
-let instance: AgentStateLogger | null = null;
+export function init() {
+  return AgentStateLogger.init();
+}
 
-export const agentStateLogger = () => {
-  if (!instance) {
-    instance = new AgentStateLogger();
-  }
-  return instance;
-};
+export function instance() {
+  return AgentStateLogger.getInstance();
+}

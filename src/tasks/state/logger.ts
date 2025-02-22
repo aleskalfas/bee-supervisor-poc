@@ -16,7 +16,24 @@ import {
 export const DEFAULT_NAME = "task_state";
 export const DEFAULT_PATH = ["logs"] as readonly string[];
 
-class TaskStateLogger extends BaseStateLogger<typeof TaskStateDataTypeSchema> {
+export class TaskStateLogger extends BaseStateLogger<typeof TaskStateDataTypeSchema> {
+  private static instance?: TaskStateLogger;
+
+  static init() {
+    if (this.instance) {
+      throw new Error(`Task state logger is already initialized`);
+    }
+    this.instance = new TaskStateLogger();
+    return this.instance;
+  }
+
+  static getInstance() {
+    if (!this.instance) {
+      throw new Error(`Task state logger wasn't initialized yet`);
+    }
+    return this.instance;
+  }
+
   constructor(logPath?: string) {
     super(DEFAULT_PATH, DEFAULT_NAME, logPath);
   }
@@ -103,12 +120,10 @@ class TaskStateLogger extends BaseStateLogger<typeof TaskStateDataTypeSchema> {
   }
 }
 
-let instance: TaskStateLogger | null = null;
+export function init() {
+  return TaskStateLogger.init();
+}
 
-// Export singleton instance
-export const taskStateLogger = () => {
-  if (!instance) {
-    instance = new TaskStateLogger();
-  }
-  return instance;
-};
+export function instance() {
+  return TaskStateLogger.getInstance();
+}

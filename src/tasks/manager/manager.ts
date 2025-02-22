@@ -10,11 +10,7 @@ import {
 } from "src/access-control/resources-access-control.js";
 import { agentSomeIdToTypeValue } from "src/agents/agent-id.js";
 import { AgentIdValue, AgentKindEnum, AgentTypeValue } from "src/agents/registry/dto.js";
-import { agentStateLogger } from "src/agents/state/logger.js";
-import { taskStateLogger } from "src/tasks/state/logger.js";
 import { updateDeepPartialObject } from "src/utils/objects.js";
-import { WorkspaceResource } from "src/workspace/workspace-manager.js";
-import { WorkspaceRestorable } from "src/workspace/workspace-restorable.js";
 import { taskConfigIdToValue, taskRunIdToString, taskSomeIdToTypeValue } from "../task-id.js";
 import {
   isTaskRunActiveStatus,
@@ -33,6 +29,10 @@ import {
   TaskRunTerminalStatusEnum,
   TaskTypeValue,
 } from "./dto.js";
+import { TaskStateLogger } from "@tasks/state/logger.js";
+import { AgentStateLogger } from "@agents/state/logger.js";
+import { WorkspaceResource } from "@workspaces/workspace-manager.js";
+import { WorkspaceRestorable } from "@workspaces/workspace-restorable.js";
 
 export type TaskRunRuntime = TaskRun & {
   intervalId: NodeJS.Timeout | null;
@@ -57,6 +57,8 @@ export class TaskManager extends WorkspaceRestorable {
   private taskStartIntervalId: NodeJS.Timeout | null = null;
   private registeredAgentTypes = new Map<AgentKindEnum, AgentTypeValue[]>();
   private ac: ResourcesAccessControl;
+  private stateLogger: TaskStateLogger;
+  private agentStateLogger: AgentStateLogger;
 
   constructor(
     private onTaskStart: (
@@ -91,9 +93,10 @@ export class TaskManager extends WorkspaceRestorable {
   ) {
     super(TASK_MANAGER_CONFIG_PATH, TASK_MANAGER_USER);
     this.logger.info("Initializing TaskManager");
+    this.stateLogger = TaskStateLogger.getInstance();
+    this.agentStateLogger = AgentStateLogger.getInstance();
 
     this.ac = new ResourcesAccessControl(this.constructor.name, [TASK_MANAGER_USER]);
-
     this.ac.createResource(TASK_MANAGER_RESOURCE, TASK_MANAGER_USER, TASK_MANAGER_USER);
 
     this.options = {
@@ -184,7 +187,7 @@ export class TaskManager extends WorkspaceRestorable {
       }
       types.push(agentType);
     }
-    taskStateLogger().logAgentTypeRegister({
+    this.stateLogger.logAgentTypeRegister({
       agentTypeId: agentSomeIdToTypeValue({ agentKind, agentType }),
     });
   }
@@ -405,7 +408,7 @@ export class TaskManager extends WorkspaceRestorable {
     this.ac.createResource(taskConfigId, ownerAgentId, actingAgentId);
     this.ac.createPermissions(taskConfigId, ownerAgentId, READ_EXECUTE_ACCESS, actingAgentId);
 
-    taskStateLogger().logTaskConfigCreate({
+    this.stateLogger.logTaskConfigCreate({
       taskConfigId,
       taskType: taskSomeIdToTypeValue(configVersioned),
       config: configVersioned,
@@ -537,7 +540,7 @@ export class TaskManager extends WorkspaceRestorable {
       actingAgentId,
     );
 
-    taskStateLogger().logTaskConfigUpdate({
+    this.stateLogger.logTaskConfigUpdate({
       taskType: taskSomeIdToTypeValue(newConfigVersion),
       taskConfigId: newConfigVersion.taskConfigId,
       config: newConfigVersion,
@@ -582,7 +585,7 @@ export class TaskManager extends WorkspaceRestorable {
         taskConfigVersion,
       });
 
-      taskStateLogger().logTaskConfigDestroy({
+      this.stateLogger.logTaskConfigDestroy({
         taskConfigId,
         taskType,
       });
@@ -590,7 +593,7 @@ export class TaskManager extends WorkspaceRestorable {
       this.ac.removeResource(taskConfigId, actingAgentId);
 
       const [poolStats, versions] = this.getPoolStats(taskKind, taskType, actingAgentId);
-      taskStateLogger().logPoolChange({
+      this.stateLogger.logPoolChange({
         taskTypeId: taskSomeIdToTypeValue({ taskKind, taskType }),
         poolStats,
         versions,
@@ -676,7 +679,7 @@ export class TaskManager extends WorkspaceRestorable {
       ...taskRun,
     });
 
-    taskStateLogger().logTaskRunCreate({
+    this.stateLogger.logTaskRunCreate({
       taskConfigId: taskRun.config.taskConfigId,
       taskRunId,
       taskRun,
@@ -694,7 +697,7 @@ export class TaskManager extends WorkspaceRestorable {
     this.logger.trace("Added task to pool", { taskKind, taskType, taskConfigVersion, taskRunId });
 
     const [poolStats, versions] = this.getPoolStats(taskKind, taskType, actingAgentId);
-    taskStateLogger().logPoolChange({
+    this.stateLogger.logPoolChange({
       taskTypeId: taskSomeIdToTypeValue({ taskKind, taskType }),
       poolStats,
       versions,
@@ -867,12 +870,12 @@ export class TaskManager extends WorkspaceRestorable {
       taskConfigVersion,
     });
 
-    taskStateLogger().logTaskRunDestroy({
+    this.stateLogger.logTaskRunDestroy({
       taskRunId,
     });
 
     const [poolStats, versions] = this.getPoolStats(taskKind, taskType, actingAgentId);
-    taskStateLogger().logPoolChange({
+    this.stateLogger.logPoolChange({
       taskTypeId: taskSomeIdToTypeValue(taskRun),
       poolStats,
       versions,
@@ -903,7 +906,7 @@ export class TaskManager extends WorkspaceRestorable {
       currentAgentId: actingAgentId,
     });
 
-    agentStateLogger().logTaskAssigned({
+    this.agentStateLogger.logTaskAssigned({
       agentId: actingAgentId,
       assignment: clone(omit(taskRun, ["intervalId"])),
       assignmentId: taskRunId,
@@ -946,7 +949,7 @@ export class TaskManager extends WorkspaceRestorable {
 
     this.ac.removePermissions(taskRunId, actingAgentId, TASK_MANAGER_USER);
 
-    agentStateLogger().logTaskUnassigned({
+    this.agentStateLogger.logTaskUnassigned({
       agentId: actingAgentId,
       assignmentId: taskRunId,
       unassignedAt,
@@ -976,11 +979,11 @@ export class TaskManager extends WorkspaceRestorable {
     update: Partial<TaskRun>,
   ): TaskRun {
     updateDeepPartialObject(taskRun, update);
-    taskStateLogger().logTaskRunUpdate({ taskRunId, taskRun: update });
+    this.stateLogger.logTaskRunUpdate({ taskRunId, taskRun: update });
     if (update.status) {
       const { taskKind, taskType } = taskRun;
       const [poolStats, versions] = this.getPoolStats(taskKind, taskType, TASK_MANAGER_USER);
-      taskStateLogger().logPoolChange({
+      this.stateLogger.logPoolChange({
         taskTypeId: taskSomeIdToTypeValue({ taskKind, taskType }),
         poolStats,
         versions,
@@ -1173,8 +1176,8 @@ export class TaskManager extends WorkspaceRestorable {
   ): void {
     const taskRun = this.getTaskRun(taskRunId, actingAgentId);
     taskRun.history.push(entry);
-    taskStateLogger().logTaskHistoryEntryCreate({ taskRunId, entry });
-    agentStateLogger().logTaskHistoryEntry({
+    this.stateLogger.logTaskHistoryEntryCreate({ taskRunId, entry });
+    this.agentStateLogger.logTaskHistoryEntry({
       agentId: actingAgentId,
       entry,
       assignmentId: taskRunId,

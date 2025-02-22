@@ -8,8 +8,6 @@ export enum AgentTypes {
   BOSS = "boss",
 }
 
-// (agentKind: ${agentKind}, agentType: ${agentType}, agentId: ${agentId})
-
 export const SUPERVISOR_INSTRUCTIONS = (
   agentKind: string,
   agentType: string,
