@@ -11,7 +11,11 @@ export abstract class BaseToolsFactory {
 
   constructor() {
     this.logger = Logger.root.child({ name: this.constructor.name });
-    for (const factory of this.getFactoriesMethods()) {
+  }
+
+  async init() {
+    const methods = await this.getFactoriesMethods();
+    for (const factory of methods) {
       const product = factory();
       this.availableTools.set(product.name, {
         name: product.name,
@@ -21,7 +25,7 @@ export abstract class BaseToolsFactory {
     }
   }
 
-  abstract getFactoriesMethods(): ToolFactoryMethod[];
+  abstract getFactoriesMethods(): Promise<ToolFactoryMethod[]>;
 
   getAvailableTools(): AvailableTool[] {
     return Array.from(this.availableTools.values());

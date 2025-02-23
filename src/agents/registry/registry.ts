@@ -22,8 +22,8 @@ import {
   AgentWithInstance,
 } from "./dto.js";
 import { AgentStateLogger } from "@agents/state/logger.js";
-import { WorkspaceResource } from "@workspaces/workspace-manager.js";
-import { WorkspaceRestorable } from "@workspaces/workspace-restorable.js";
+import { WorkspaceRestorable } from "@workspaces/restore/restorable.js";
+import { WorkspaceResource } from "@workspaces/manager/index.js";
 
 /**
  * Callbacks for managing agent lifecycle events.
@@ -164,14 +164,15 @@ export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
    * Register tools factory for a specific agent type
    * @param tuples
    */
-  registerToolsFactories(tuples: [AgentKindEnum, BaseToolsFactory][]) {
-    tuples.map(([agentKind, factory]) => {
+  async registerToolsFactories(tuples: [AgentKindEnum, BaseToolsFactory][]) {
+    for (const [agentKind, factory] of tuples) {
+      await factory.init();
       this.toolsFactory.set(agentKind, factory);
       this.stateLogger.logAvailableTools({
         agentKindId: agentSomeIdToKindValue({ agentKind }),
         availableTools: factory.getAvailableTools(),
       });
-    });
+    }
   }
 
   private getAgentKindPoolMap(agentKind: AgentKindEnum) {

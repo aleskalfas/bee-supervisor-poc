@@ -4,7 +4,7 @@ import { AgentRegistry } from "@agents/registry/registry.js";
 import { AgentStateLogger } from "@agents/state/logger.js";
 import { TaskManager } from "@tasks/manager/manager.js";
 import { TaskStateLogger } from "@tasks/state/logger.js";
-import { WorkspaceManager } from "@workspaces/workspace-manager.js";
+import { WorkspaceManager } from "@workspaces/manager/manager.js";
 import { BeeAgent } from "bee-agent-framework/agents/bee/agent";
 import { supervisor, operator } from "./agents/index.js";
 
@@ -12,13 +12,13 @@ export * as agents from "./agents/index.js";
 export * as tasks from "./tasks/index.js";
 export * as workspaces from "./workspaces/index.js";
 
-export async function createBeeSupervisor() {
+export async function createBeeSupervisor(workspace = "default") {
   // Reset audit logs
   AgentStateLogger.init();
   TaskStateLogger.init();
 
   // Setup workspace
-  WorkspaceManager.init(["workspaces"], "default");
+  WorkspaceManager.init(["workspaces"], workspace);
 
   const registry = new AgentRegistry<BeeAgent>({
     agentLifecycle: {
@@ -95,8 +95,15 @@ export async function createBeeSupervisor() {
     },
   );
 
-  registry.registerToolsFactories([
-    ["supervisor", new supervisor.ToolsFactory(registry, taskManager)],
+  await registry.registerToolsFactories([
+    [
+      "supervisor",
+      new supervisor.ToolsFactory(
+        registry,
+        taskManager,
+        supervisor.Workdir.getWorkdirPath().validPath,
+      ),
+    ],
     ["operator", new operator.ToolsFactory()],
   ]);
 
@@ -123,6 +130,8 @@ export async function createBeeSupervisor() {
 
   taskManager.registerAdminAgent(supervisorAgentId);
   taskManager.restore(supervisorAgentId);
+
+  supervisor.Workdir.registerWorkdir(supervisorAgentId);
 
   // Can you create tasks to write poem about: sun, earth, mars and assign them to the right agent type and run them?
   // Can you create agent type that will write the best poems on different topics, then create tasks to create poem about: sun, night, water. Assign them to the right agent types run all tasks and give me the created poems when it will be all finished?

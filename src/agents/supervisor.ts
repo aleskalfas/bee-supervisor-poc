@@ -1,8 +1,9 @@
+import { TaskManager } from "@tasks/manager/manager.js";
+import { TaskManagerTool, TOOL_NAME as taskManagerToolName } from "@tasks/tool.js";
+import { WorkspaceManager } from "@workspaces/manager/manager.js";
 import { BaseToolsFactory, ToolFactoryMethod } from "src/base/tools-factory.js";
-import { TaskManager } from "src/tasks/manager/manager.js";
-import { TaskManagerTool, TOOL_NAME as taskManagerToolName } from "src/tasks/tool.js";
-import { AgentRegistry } from "./registry/registry.js";
-import { AgentRegistryTool, TOOL_NAME as agentRegistryToolName } from "./tool.js";
+import { AgentRegistry } from "./registry/index.js";
+import { AgentRegistryTool, TOOL_NAME as agentRegistryToolName } from "./registry/tool.js";
 
 export enum AgentTypes {
   BOSS = "boss",
@@ -54,14 +55,38 @@ export class ToolsFactory extends BaseToolsFactory {
   constructor(
     protected registry: AgentRegistry<any>,
     protected taskManager: TaskManager,
+    protected workdir: string,
   ) {
     super();
   }
 
-  getFactoriesMethods(): ToolFactoryMethod[] {
+  async getFactoriesMethods(): Promise<ToolFactoryMethod[]> {
     return [
       () => new AgentRegistryTool({ registry: this.registry }),
       () => new TaskManagerTool({ taskManager: this.taskManager }),
     ];
+  }
+}
+
+export class Workdir {
+  static path = ["workdir"] as const;
+
+  static getWorkdirPath() {
+    const workdirPath = WorkspaceManager.getInstance().getWorkspacePath(
+      Workdir.getWorkspacePathInput(),
+    );
+
+    return workdirPath;
+  }
+
+  private static getWorkspacePathInput() {
+    return {
+      kind: "directory",
+      path: Workdir.path,
+    } as const;
+  }
+
+  static registerWorkdir(supervisorId: string) {
+    WorkspaceManager.getInstance().registerResource(Workdir.getWorkspacePathInput(), supervisorId);
   }
 }

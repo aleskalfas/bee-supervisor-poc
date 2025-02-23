@@ -3,7 +3,7 @@ import { DuckDuckGoSearchTool } from "bee-agent-framework/tools/search/duckDuckG
 import { BaseToolsFactory, ToolFactoryMethod } from "src/base/tools-factory.js";
 
 export class ToolsFactory extends BaseToolsFactory {
-  getFactoriesMethods(): ToolFactoryMethod[] {
+  async getFactoriesMethods(): Promise<ToolFactoryMethod[]> {
     return [() => new DuckDuckGoSearchTool(), () => new ArXivTool()];
   }
 }

@@ -31,8 +31,8 @@ import {
 } from "./dto.js";
 import { TaskStateLogger } from "@tasks/state/logger.js";
 import { AgentStateLogger } from "@agents/state/logger.js";
-import { WorkspaceResource } from "@workspaces/workspace-manager.js";
-import { WorkspaceRestorable } from "@workspaces/workspace-restorable.js";
+import { WorkspaceRestorable } from "@workspaces/restore/index.js";
+import { WorkspaceResource } from "@workspaces/manager/index.js";
 
 export type TaskRunRuntime = TaskRun & {
   intervalId: NodeJS.Timeout | null;

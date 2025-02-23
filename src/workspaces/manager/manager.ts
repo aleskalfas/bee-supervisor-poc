@@ -138,8 +138,7 @@ export class WorkspaceManager extends EventEmitter {
     input: CreateFileResourceInput | CreateDirectoryResourceInput,
     ownerId: string,
   ): WorkspaceResource {
-    const inputJoinedPath = path.join(this.workspacePath, ...input.path);
-    const validPath = validatePath(this.workspacePath, inputJoinedPath);
+    const { inputJoinedPath, validPath } = this.getWorkspacePath(input);
     const name = basename(validPath);
 
     // Check if resource already exists in our tracking
@@ -275,5 +274,11 @@ export class WorkspaceManager extends EventEmitter {
       this.logger.error(`Error writing to file: ${resourcePath}`, error);
       throw new Error(`Failed to write to file ${resourcePath}: ${error.message}`);
     }
+  }
+
+  getWorkspacePath(input: CreateFileResourceInput | CreateDirectoryResourceInput) {
+    const inputJoinedPath = path.join(this.workspacePath, ...input.path);
+    const validPath = validatePath(this.workspacePath, inputJoinedPath);
+    return { inputJoinedPath, validPath };
   }
 }

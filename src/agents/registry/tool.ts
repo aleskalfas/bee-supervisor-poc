@@ -7,7 +7,7 @@ import {
   ToolInput,
 } from "bee-agent-framework/tools/base";
 import { z } from "zod";
-import { AgentInstanceRef, AgentRegistry } from "./registry/registry.js";
+import { AgentInstanceRef, AgentRegistry } from "./registry.js";
 import {
   Agent,
   AgentConfig,
@@ -15,7 +15,7 @@ import {
   AgentConfigSchema,
   AgentKindEnumSchema,
   AvailableTool,
-} from "./registry/dto.js";
+} from "./dto.js";
 
 export const TOOL_NAME = "agent_registry";
 export interface AgentRegistryToolInput extends BaseToolOptions {
