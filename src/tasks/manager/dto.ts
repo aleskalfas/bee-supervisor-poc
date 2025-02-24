@@ -4,8 +4,8 @@ import {
   AgentKindEnumSchema,
   AgentNumValueSchema,
   AgentTypeValueSchema,
-} from "src/agents/registry/dto.js";
-import { DateStringSchema } from "src/base/dto.js";
+} from "@/agents/registry/dto.js";
+import { DateStringSchema } from "@/base/dto.js";
 import { z } from "zod";
 
 export const TaskKindEnumSchema = AgentKindEnumSchema.describe(

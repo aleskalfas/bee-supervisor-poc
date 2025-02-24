@@ -24,10 +24,11 @@
     "removeComments": false,
     "forceConsistentCasingInFileNames": true,
     "paths": {
-      "@agents/*": ["src/agents/*"],
-      "@tasks/*": ["src/tasks/*"],
-      "@workspaces/*": ["src/workspaces/*"],
-      "@ui/*": ["src/ui/*"]
+      "@/*": ["./src/*"],
+      "@agents/*": ["./src/agents/*"],
+      "@tasks/*": ["./src/tasks/*"],
+      "@workspaces/*": ["./src/workspaces/*"],
+      "@ui/*": ["./src/ui/*"]
     }
   },
   "include": ["src"]

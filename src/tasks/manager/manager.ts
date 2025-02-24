@@ -7,10 +7,10 @@ import {
   READ_WRITE_ACCESS,
   ResourcesAccessControl,
   WRITE_ONLY_ACCESS,
-} from "src/access-control/resources-access-control.js";
-import { agentSomeIdToTypeValue } from "src/agents/agent-id.js";
-import { AgentIdValue, AgentKindEnum, AgentTypeValue } from "src/agents/registry/dto.js";
-import { updateDeepPartialObject } from "src/utils/objects.js";
+} from "@/access-control/resources-access-control.js";
+import { agentSomeIdToTypeValue } from "@/agents/agent-id.js";
+import { AgentIdValue, AgentKindEnum, AgentTypeValue } from "@/agents/registry/dto.js";
+import { updateDeepPartialObject } from "@/utils/objects.js";
 import { taskConfigIdToValue, taskRunIdToString, taskSomeIdToTypeValue } from "../task-id.js";
 import {
   isTaskRunActiveStatus,

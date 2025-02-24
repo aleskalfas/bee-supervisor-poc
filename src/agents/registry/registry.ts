@@ -1,6 +1,6 @@
 import { clone, isNonNullish } from "remeda";
-import { BaseToolsFactory } from "src/base/tools-factory.js";
-import { updateDeepPartialObject } from "src/utils/objects.js";
+import { BaseToolsFactory } from "@/base/tools-factory.js";
+import { updateDeepPartialObject } from "@/utils/objects.js";
 import {
   agentConfigIdToValue,
   agentIdToString,
@@ -97,10 +97,6 @@ export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
   private poolsToCleanup: string[] = [];
   private stateLogger: AgentStateLogger;
 
-  /**
-   * Creates a new AgentRegistry instance
-   * @param callbacks - Callbacks for handling agent lifecycle events and agent type registration
-   */
   constructor({
     agentLifecycle,
     onAgentConfigCreated,

@@ -1,6 +1,6 @@
 import { WorkspaceManager, WorkspaceResource } from "@workspaces/manager/manager.js";
 import { Logger } from "bee-agent-framework";
-import { AgentIdValue } from "src/agents/registry/dto.js";
+import { AgentIdValue } from "@/agents/registry/dto.js";
 
 export abstract class WorkspaceRestorable {
   protected readonly logger: Logger;

@@ -1,5 +1,5 @@
-import { AgentKindEnum, AgentTypeValue } from "src/agents/registry/dto.js";
-import { BaseStateBuilder } from "src/base/state/base-state-builder.js";
+import { AgentKindEnum, AgentTypeValue } from "@/agents/registry/dto.js";
+import { BaseStateBuilder } from "@/base/state/base-state-builder.js";
 import {
   AgentTypeRegisterEvent,
   TaskConfigCreateEvent,
@@ -13,7 +13,7 @@ import {
   TaskStateDataType,
   TaskStateDataTypeSchema,
 } from "./dto.js";
-import { stringToAgentType } from "src/agents/agent-id.js";
+import { stringToAgentType } from "@/agents/agent-id.js";
 import {
   TaskConfigIdValue,
   TaskConfig,
@@ -25,7 +25,7 @@ import {
 } from "../manager/dto.js";
 import { stringToTaskConfig, stringToTaskType, taskSomeIdToKindValue } from "../task-id.js";
 import { clone } from "remeda";
-import { updateDeepPartialObject } from "src/utils/objects.js";
+import { updateDeepPartialObject } from "@/utils/objects.js";
 
 // Define update types as const to ensure type safety
 export const StateUpdateType = {

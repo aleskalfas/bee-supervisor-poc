@@ -12,7 +12,7 @@ import {
   stringToEntityType,
   stringToEntityVersion,
   stringToEntityVersionNum,
-} from "src/base/entity-id.js";
+} from "@/base/entity-id.js";
 import {
   TaskConfigIdValue,
   TaskKindEnum,

@@ -9,7 +9,7 @@ import { ChatLLM, ChatLLMOutput } from "bee-agent-framework/llms/chat";
 import Groq from "groq-sdk";
 import { Ollama } from "ollama";
 import OpenAI from "openai";
-import { AgentKindEnum } from "src/agents/registry/dto.js";
+import { AgentKindEnum } from "@/agents/registry/dto.js";
 import { z } from "zod";
 
 export const Providers = {

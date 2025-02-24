@@ -8,10 +8,6 @@ import { WorkspaceManager } from "@workspaces/manager/manager.js";
 import { BeeAgent } from "bee-agent-framework/agents/bee/agent";
 import { supervisor, operator } from "./agents/index.js";
 
-export * as agents from "./agents/index.js";
-export * as tasks from "./tasks/index.js";
-export * as workspaces from "./workspaces/index.js";
-
 export async function createBeeSupervisor(workspace = "default") {
   // Reset audit logs
   AgentStateLogger.init();

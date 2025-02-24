@@ -1,4 +1,4 @@
-import { BaseStateBuilder } from "src/base/state/base-state-builder.js";
+import { BaseStateBuilder } from "@/base/state/base-state-builder.js";
 import { agentSomeIdToKindValue, stringToAgentConfig, stringToAgentType } from "../agent-id.js";
 import {
   AgentConfig,

@@ -5,7 +5,7 @@ import {
   AgentTypeId,
   stringToAgent,
   stringToAgentType,
-} from "src/agents/agent-id.js";
+} from "@/agents/agent-id.js";
 import {
   AgentConfigPoolStats,
   AgentKindEnum,
@@ -13,8 +13,8 @@ import {
   AgentKindValue,
   AgentTypeValue,
   AvailableTool,
-} from "src/agents/registry/dto.js";
-import { AgentInfo } from "src/agents/state/builder.js";
+} from "@/agents/registry/dto.js";
+import { AgentInfo } from "@/agents/state/builder.js";
 import {
   TaskConfigIdValue,
   TaskConfigPoolStats,
@@ -23,16 +23,16 @@ import {
   TaskKindValue,
   TaskRunStatusEnum,
   TaskTypeValue,
-} from "src/tasks/manager/dto.js";
+} from "@/tasks/manager/dto.js";
 import {
   stringToTaskRun,
   stringToTaskType,
   TaskKindId,
   TaskRunId,
   TaskTypeId,
-} from "src/tasks/task-id.js";
+} from "@/tasks/task-id.js";
 import { UIColors } from "./colors.js";
-import { TaskRunInfo } from "src/tasks/state/builder.js";
+import { TaskRunInfo } from "@/tasks/state/builder.js";
 
 export interface StyleItem {
   fg?: string;

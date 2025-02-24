@@ -1,18 +1,18 @@
 import {
   EntityKindId,
-  EntityNumId,
-  entityToKindString,
-  entityToTypeIdString,
-  entityToVersionIdString,
-  entityToVersionNumIdString,
   EntityTypeId,
   EntityVersionId,
+  EntityNumId,
   EntityVersionNumId,
   stringToEntityKind,
   stringToEntityType,
   stringToEntityVersion,
   stringToEntityVersionNum,
-} from "src/base/entity-id.js";
+  entityToKindString,
+  entityToTypeIdString,
+  entityToVersionIdString,
+  entityToVersionNumIdString,
+} from "@/base/entity-id.js";
 import {
   AgentConfigIdValue,
   AgentConfigVersionValue,

@@ -1,4 +1,4 @@
-import { TaskRunHistoryEntrySchema, TaskRunSchema } from "src/tasks/manager/dto.js";
+import { TaskRunHistoryEntrySchema, TaskRunSchema } from "@/tasks/manager/dto.js";
 import { z } from "zod";
 import {
   AgentConfigSchema,
@@ -7,7 +7,7 @@ import {
   AgentConfigIdValueSchema,
   AgentTypeValueSchema,
 } from "../registry/dto.js";
-import { DateStringSchema } from "src/base/dto.js";
+import { DateStringSchema } from "@/base/dto.js";
 
 // Base schemas
 export const AgentEventKindEnum = z.enum([

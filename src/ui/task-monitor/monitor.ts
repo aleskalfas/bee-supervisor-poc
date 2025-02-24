@@ -1,9 +1,9 @@
 import blessed from "blessed";
 import { join } from "path";
 import { clone } from "remeda";
-import { stringToAgent } from "src/agents/agent-id.js";
-import { isTaskRunActiveStatus, TaskConfig, TaskKindEnumSchema } from "src/tasks/manager/dto.js";
-import { StateUpdateType, TaskRunInfo, TaskStateBuilder } from "src/tasks/state/builder.js";
+import { stringToAgent } from "@/agents/agent-id.js";
+import { isTaskRunActiveStatus, TaskConfig, TaskKindEnumSchema } from "@/tasks/manager/dto.js";
+import { StateUpdateType, TaskRunInfo, TaskStateBuilder } from "@/tasks/state/builder.js";
 import {
   stringToTaskConfig,
   stringToTaskKind,
@@ -12,7 +12,7 @@ import {
   TaskKindId,
   taskSomeIdToTypeValue,
   TaskTypeId,
-} from "src/tasks/task-id.js";
+} from "@/tasks/task-id.js";
 import { BaseMonitor, ParentInput, ScreenInput } from "../base/monitor.js";
 import * as st from "../config.js";
 

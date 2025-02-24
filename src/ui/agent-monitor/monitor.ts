@@ -9,9 +9,9 @@ import {
   stringToAgent,
   stringToAgentConfig,
   stringToAgentKind,
-} from "src/agents/agent-id.js";
-import { AgentConfig, AgentKindEnumSchema, AvailableTool } from "src/agents/registry/dto.js";
-import { AgentInfo, AgentStateBuilder, StateUpdateType } from "src/agents/state/builder.js";
+} from "@/agents/agent-id.js";
+import { AgentConfig, AgentKindEnumSchema, AvailableTool } from "@/agents/registry/dto.js";
+import { AgentInfo, AgentStateBuilder, StateUpdateType } from "@/agents/state/builder.js";
 import * as st from "../config.js";
 import { BaseMonitor, ParentInput, ScreenInput } from "../base/monitor.js";
 

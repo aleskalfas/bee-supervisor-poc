@@ -24,7 +24,6 @@ for await (const { prompt } of reader) {
       )
       .observe((emitter) => {
         emitter.on("update", (data, meta) => {
-          // supervisorLogger;
           reader.write(
             `${(meta.creator as any).input.meta.name} 🤖 (${data.update.key}) :`,
             data.update.value,

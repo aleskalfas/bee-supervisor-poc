@@ -3,7 +3,7 @@ import EventEmitter from "events";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path, { basename } from "path";
 import { clone } from "remeda";
-import { validatePath } from "src/utils/file.js";
+import { validatePath } from "@/utils/file.js";
 
 export const WORKSPACES_DIR_PATH = ["..", "..", "workspaces"] as const;
 export const DEFAULT_WORKSPACE_DIR_NAME = "default";

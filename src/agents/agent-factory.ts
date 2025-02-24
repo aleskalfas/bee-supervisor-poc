@@ -1,10 +1,10 @@
-import { getChatLLM } from "src/helpers/llm.js";
 import * as supervisor from "./supervisor.js";
 import { BeeAgent } from "bee-agent-framework/agents/bee/agent";
 import { UnconstrainedMemory } from "bee-agent-framework/memory/unconstrainedMemory";
 import { TokenMemory } from "bee-agent-framework/memory/tokenMemory";
-import { BaseToolsFactory } from "src/base/tools-factory.js";
+import { BaseToolsFactory } from "@/base/tools-factory.js";
 import { AgentKindEnum } from "./registry/dto.js";
+import { getChatLLM } from "@/helpers/llm.js";
 
 export interface BaseCreateAgentInput {
   agentKind: AgentKindEnum;

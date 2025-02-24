@@ -1,7 +1,7 @@
 import { TaskManager } from "@tasks/manager/manager.js";
 import { TaskManagerTool, TOOL_NAME as taskManagerToolName } from "@tasks/tool.js";
 import { WorkspaceManager } from "@workspaces/manager/manager.js";
-import { BaseToolsFactory, ToolFactoryMethod } from "src/base/tools-factory.js";
+import { BaseToolsFactory, ToolFactoryMethod } from "@/base/tools-factory.js";
 import { AgentRegistry } from "./registry/index.js";
 import { AgentRegistryTool, TOOL_NAME as agentRegistryToolName } from "./registry/tool.js";
 
