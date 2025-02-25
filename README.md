@@ -2,6 +2,34 @@
 
 A proof-of-concept implementation of a multi-agent task management system that demonstrates hierarchical agent coordination and task based on [BeeAI Framework](https://i-am-bee.github.io/bee-agent-framework#/) ❤️.
 
+## 🚀 Running the Project
+
+1. Start the Supervisor Agent and send him a message
+
+```sh
+npm run start:dev <<< "Can you generate a poem about each of these topics: bee, hive, queen, sun, flowers?"
+```
+
+![Supervisor terminal](./media/supervisor.png)
+
+2. **Observe the process** in the Monitor UI.
+
+```sh
+npm run monitor
+```
+
+![Monitor GUI](./media/monitor.png)
+
+> [!CAUTION] > **Outdated Documentation**  
+> The README and video are outdated and do not reflect the current state of the project, which has evolved significantly.  
+> Some of the latest features not covered include:
+>
+> - **Task Configurations** – Work similarly to agent configurations.
+> - **CLI UI Monitor** – Provides real-time monitoring for agents and tasks.
+> - **Workspaces** – Enables restoration of previous work.
+
+---
+
 ## Features
 
 - **Agent Registry**: Manages different types of agents and maintains agent pools
@@ -152,13 +180,7 @@ sequenceDiagram
 
 ### Run
 
-- Monitor
-  `npm run monitor`
-
-- Supervisor
-  `npm run start:dev`
-
-- Send message like `Hi, can you create poem about each of these topics: bee, hive, queen, sun, flowers?` to the supervisor.
+`npm start <<< "Hi, can you create poem about each of these topics: bee, hive, queen, sun, flowers?"`
 
 ### Live Demo
 
