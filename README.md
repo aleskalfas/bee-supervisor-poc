@@ -20,7 +20,8 @@ npm run monitor
 
 ![Monitor GUI](./media/monitor.png)
 
-> [!CAUTION] > **Outdated Documentation**  
+> [!CAUTION]
+> **Outdated Documentation**  
 > The README and video are outdated and do not reflect the current state of the project, which has evolved significantly.  
 > Some of the latest features not covered include:
 >
