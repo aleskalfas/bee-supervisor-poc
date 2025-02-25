@@ -1,13 +1,13 @@
-import { getChatLLM } from "src/helpers/llm.js";
-import { AgentKind } from "./agent-registry.js";
 import * as supervisor from "./supervisor.js";
 import { BeeAgent } from "bee-agent-framework/agents/bee/agent";
 import { UnconstrainedMemory } from "bee-agent-framework/memory/unconstrainedMemory";
 import { TokenMemory } from "bee-agent-framework/memory/tokenMemory";
-import { BaseToolsFactory } from "src/base/tools-factory.js";
+import { BaseToolsFactory } from "@/base/tools-factory.js";
+import { AgentKindEnum } from "./registry/dto.js";
+import { getChatLLM } from "@/helpers/llm.js";
 
 export interface BaseCreateAgentInput {
-  agentKind: AgentKind;
+  agentKind: AgentKindEnum;
   agentType: string;
   agentId: string;
   instructions: string;
@@ -22,7 +22,9 @@ export function createAgent<TInput extends BaseCreateAgentInput>(
   const llm = getChatLLM(input.agentKind);
   const generalInstructions = `You are a ${input.agentKind} kind of agent (agentId=${input.agentId}, agentType=${input.agentType}). ${input.instructions}`;
   switch (input.agentKind) {
-    case "supervisor":
+    case "supervisor": {
+      const tools = toolsFactory.createTools(input.tools);
+
       return new BeeAgent({
         meta: {
           name: input.agentId,
@@ -30,14 +32,19 @@ export function createAgent<TInput extends BaseCreateAgentInput>(
         },
         llm,
         memory: new UnconstrainedMemory(),
-        tools: toolsFactory.createTools(input.tools),
+        tools,
         templates: {
           system: (template) =>
             template.fork((config) => {
-              config.defaults.instructions = `${supervisor.SUPERVISOR_INSTRUCTIONS(input.agentKind, input.agentType, input.agentId)}\n\n${generalInstructions}`;
+              config.defaults.instructions = supervisor.SUPERVISOR_INSTRUCTIONS(
+                input.agentKind,
+                input.agentType,
+                input.agentId,
+              );
             }),
         },
       });
+    }
     case "operator":
       return new BeeAgent({
         meta: {
@@ -54,5 +61,7 @@ export function createAgent<TInput extends BaseCreateAgentInput>(
             }),
         },
       });
+    default:
+      throw new Error(`Undefined agent kind agentKind:${input.agentKind}`);
   }
 }
