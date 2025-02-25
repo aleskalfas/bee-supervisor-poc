@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { createAgent } from "@agents/agent-factory.js";
 import { AgentKindEnumSchema } from "@agents/registry/dto.js";
 import { AgentRegistry } from "@agents/registry/registry.js";
@@ -46,12 +47,26 @@ export async function createBeeSupervisor(workspace = "default") {
     onAgentConfigCreated(agentKind, agentType) {
       taskManager.registerAgentType(agentKind, agentType);
     },
+    onAgentAvailable(agentKind, agentType, agentConfigVersion, availableCount) {
+      taskManager.agentAvailable(agentKind, agentType, agentConfigVersion, availableCount);
+    },
   });
 
   const taskManager = new TaskManager(
-    async (taskRun, taskManager, { onAgentCreate, onAgentComplete, onAgentError }) => {
-      const agent = await registry.acquireAgent(taskRun.config.agentKind, taskRun.config.agentType);
-      onAgentCreate(taskRun.taskRunId, agent.agentId, taskManager);
+    async (
+      taskRun,
+      taskManager,
+      { onAwaitingAgentAcquired, onAgentAcquired, onAgentComplete, onAgentError },
+    ) => {
+      let agent;
+      try {
+        agent = await registry.acquireAgent(taskRun.config.agentKind, taskRun.config.agentType);
+      } catch {
+        onAwaitingAgentAcquired(taskRun.taskRunId, taskManager);
+        return;
+      }
+
+      onAgentAcquired(taskRun.taskRunId, agent.agentId, taskManager);
       const { instance } = agent;
       const prompt = taskRun.taskRunInput;
       instance
@@ -65,20 +80,20 @@ export async function createBeeSupervisor(workspace = "default") {
             },
           },
         )
-        //   .observe((emitter) => {
-        //     emitter.on("update", (data, meta) => {
-        //       reader.write(
-        //         `${(meta.creator as any).input.meta.name} 🤖 (${data.update.key}) :`,
-        //         data.update.value,
-        //       );
-        //     });
-        //     emitter.on("error", (data, meta) => {
-        //       reader.write(
-        //         `${(meta.creator as any).input.meta.name} 🤖 (${data.error.name}) :`,
-        //         data.error.message,
-        //       );
-        //     });
-        //   })
+        // .observe((emitter) => {
+        //   emitter.on("update", (data, meta) => {
+        //     reader.write(
+        //       `${(meta.creator as any).input.meta.name} 🤖 (${data.update.key}) :`,
+        //       data.update.value,
+        //     );
+        //   });
+        //   emitter.on("error", (data, meta) => {
+        //     reader.write(
+        //       `${(meta.creator as any).input.meta.name} 🤖 (${data.error.name}) :`,
+        //       data.error.message,
+        //     );
+        //   });
+        // })
         .then((resp) =>
           onAgentComplete(resp.result.text, taskRun.taskRunId, agent.agentId, taskManager),
         )

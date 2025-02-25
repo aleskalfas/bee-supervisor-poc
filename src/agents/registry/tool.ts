@@ -43,7 +43,9 @@ export interface AgentRegistryToolResult {
 export const GetAvailableToolsSchema = z
   .object({
     method: z.literal("getAvailableTools"),
-    agentKind: AgentKindEnumSchema.describe("Kind of agent is mandatory."),
+    agentKind: AgentKindEnumSchema.default(AgentKindEnumSchema.enum.operator).describe(
+      "Kind of an agent.",
+    ),
   })
   .describe(
     "Get all available tools usable in agents. Use this always before try to assign any tool.",
@@ -55,6 +57,8 @@ export const CreateAgentConfigSchema = z
     agentKind: z.literal(AgentKindEnumSchema.Enum.operator),
     config: AgentConfigSchema.omit({
       agentKind: true,
+      agentConfigId: true,
+      agentConfigVersion: true,
     }),
   })
   .describe("Create a new agent configuration.");
@@ -170,7 +174,7 @@ export class AgentRegistryTool extends Tool<
     let data: AgentRegistryToolResultData;
     switch (input.method) {
       case "getAvailableTools":
-        data = this.registry.getToolsFactory(input.agentKind).getAvailableTools();
+        data = this.registry.getToolsFactory(input.agentKind || "operator").getAvailableTools();
         break;
       case "createAgentConfig":
         data = this.registry.createAgentConfig({ ...input.config, agentKind: input.agentKind });

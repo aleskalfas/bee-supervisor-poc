@@ -110,7 +110,8 @@ export const UIConfig = {
     CREATED: { fg: UIColors.yellow.yellow, icon: "◆" }, // Diamond
     EXECUTING: { fg: UIColors.green.green, icon: "▶" }, // Play triangle
     SCHEDULED: { fg: UIColors.blue.cyan, icon: "◇" }, // Hollow diamond
-    WAITING: { fg: UIColors.blue.cyan, icon: "◆" }, // Hollow diamond
+    PENDING: { fg: UIColors.blue.cyan, icon: "◆" }, // Hollow diamond
+    AWAITING_AGENT: { fg: UIColors.blue.steel_blue, icon: "◇" }, // Hollow diamond
     FAILED: { fg: UIColors.red.red, icon: "×" }, // Square
     COMPLETED: { fg: UIColors.blue.blue, icon: "●" }, // Circle
     STOPPED: { fg: UIColors.gray.gray, icon: "◼" }, // Filled square
@@ -243,7 +244,7 @@ export function applyAgentIdStyle(agentId: AgentId | AgentTypeId) {
 export function applyToolsStyle(tools: AvailableTool[]) {
   return tools
     .map((t) => [
-      applyToolNameStyle(t.name),
+      applyToolNameStyle(t.toolName),
       applyStyle(t.description, UIConfig.labels.description),
       "",
     ])

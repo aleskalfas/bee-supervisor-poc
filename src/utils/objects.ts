@@ -14,12 +14,17 @@ export function updateDeepPartialObject<T extends object>(original: T, update: D
   for (const key of keys) {
     const updateValue = update[key];
 
+    // Special case for Date objects
+    if (updateValue instanceof Date) {
+      original[key] = updateValue as T[keyof T];
+    }
     // Handle nested objects recursively
-    if (
+    else if (
       updateValue !== null &&
       typeof updateValue === "object" &&
       !Array.isArray(updateValue) &&
-      typeof original[key] === "object"
+      typeof original[key] === "object" &&
+      !(original[key] instanceof Date) // Don't treat Date as a regular object
     ) {
       original[key] = {
         ...(original[key] as object),

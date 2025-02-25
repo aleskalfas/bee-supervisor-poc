@@ -152,7 +152,13 @@ sequenceDiagram
 
 ### Run
 
-`npm start <<< "Hi, can you create poem about each of these topics: bee, hive, queen, sun, flowers?"`
+- Monitor
+  `npm run monitor`
+
+- Supervisor
+  `npm run start:dev`
+
+- Send message like `Hi, can you create poem about each of these topics: bee, hive, queen, sun, flowers?` to the supervisor.
 
 ### Live Demo
 

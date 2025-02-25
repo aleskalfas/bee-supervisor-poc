@@ -122,7 +122,8 @@ export const TaskRunStatusEnumSchema = z.enum([
   "CREATED",
   "SCHEDULED",
   "EXECUTING",
-  "WAITING",
+  "PENDING",
+  "AWAITING_AGENT",
   "STOPPED",
   "FAILED",
   "COMPLETED",
@@ -193,7 +194,8 @@ export const TaskConfigPoolStatsSchema = z
     completed: z.number(),
     running: z.number(),
 
-    waiting: z.number(),
+    pending: z.number(),
+    awaiting_agent: z.number(),
     stopped: z.number(),
     failed: z.number(),
     active: z.number(),
@@ -205,7 +207,8 @@ export type TaskConfigPoolStats = z.infer<typeof TaskConfigPoolStatsSchema>;
 // Status helpers
 const ACTIVE_STATUSES = [
   TaskRunStatusEnumSchema.enum.SCHEDULED,
-  TaskRunStatusEnumSchema.enum.WAITING,
+  TaskRunStatusEnumSchema.enum.PENDING,
+  TaskRunStatusEnumSchema.enum.AWAITING_AGENT,
   TaskRunStatusEnumSchema.enum.EXECUTING,
 ] as const;
 type ActiveStatus = (typeof ACTIVE_STATUSES)[number];

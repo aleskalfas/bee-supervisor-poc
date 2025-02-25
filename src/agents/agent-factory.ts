@@ -22,7 +22,9 @@ export function createAgent<TInput extends BaseCreateAgentInput>(
   const llm = getChatLLM(input.agentKind);
   const generalInstructions = `You are a ${input.agentKind} kind of agent (agentId=${input.agentId}, agentType=${input.agentType}). ${input.instructions}`;
   switch (input.agentKind) {
-    case "supervisor":
+    case "supervisor": {
+      const tools = toolsFactory.createTools(input.tools);
+
       return new BeeAgent({
         meta: {
           name: input.agentId,
@@ -30,14 +32,19 @@ export function createAgent<TInput extends BaseCreateAgentInput>(
         },
         llm,
         memory: new UnconstrainedMemory(),
-        tools: toolsFactory.createTools(input.tools),
+        tools,
         templates: {
           system: (template) =>
             template.fork((config) => {
-              config.defaults.instructions = `${supervisor.SUPERVISOR_INSTRUCTIONS(input.agentKind, input.agentType, input.agentId)}\n\n${generalInstructions}`;
+              config.defaults.instructions = supervisor.SUPERVISOR_INSTRUCTIONS(
+                input.agentKind,
+                input.agentType,
+                input.agentId,
+              );
             }),
         },
       });
+    }
     case "operator":
       return new BeeAgent({
         meta: {

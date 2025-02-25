@@ -254,7 +254,7 @@ export class AgentStateBuilder extends BaseStateBuilder<
     Array.from(this.state.availableTools.values())
       .flat()
       .forEach((tool) => {
-        this.state.allAvailableTools.set(tool.name, tool);
+        this.state.allAvailableTools.set(tool.toolName, tool);
       });
   }
 

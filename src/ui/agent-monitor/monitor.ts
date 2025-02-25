@@ -518,7 +518,7 @@ export class AgentMonitor extends BaseMonitor {
     return tools.map(
       (t) =>
         this.stateBuilder.getAllTools().get(t) ?? {
-          name: "Undefined",
+          toolName: "Undefined",
           description: "Lorem ipsum....",
         },
     );
