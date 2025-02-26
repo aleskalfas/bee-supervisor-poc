@@ -1,4 +1,3 @@
-import { clone } from "remeda";
 import {
   AgentId,
   AgentKindId,
@@ -16,7 +15,6 @@ import {
 } from "@/agents/registry/dto.js";
 import { AgentInfo } from "@/agents/state/builder.js";
 import {
-  TaskConfigIdValue,
   TaskConfigPoolStats,
   TaskKindEnum,
   TaskKindEnumSchema,
@@ -24,15 +22,17 @@ import {
   TaskRunStatusEnum,
   TaskTypeValue,
 } from "@/tasks/manager/dto.js";
+import { TaskRunInfo } from "@/tasks/state/builder.js";
 import {
   stringToTaskRun,
   stringToTaskType,
+  TaskConfigId,
   TaskKindId,
   TaskRunId,
   TaskTypeId,
 } from "@/tasks/task-id.js";
+import { clone } from "remeda";
 import { UIColors } from "./colors.js";
-import { TaskRunInfo } from "@/tasks/state/builder.js";
 
 export interface StyleItem {
   fg?: string;
@@ -398,8 +398,8 @@ export function task(taskRunInfo: TaskRunInfo) {
   return `${taskRunId(stringToTaskRun(taskRunInfo.taskRunId))} ${versionNum(taskRunInfo.taskConfigVersion)} ${applyStatusStyle(taskRunInfo.taskRun.status)}`;
 }
 
-export function taskConfigId(value: TaskConfigIdValue) {
-  return label(value);
+export function taskConfigId(value: TaskConfigId) {
+  return applyTaskKindIdStyle(value);
 }
 
 export function versionTaskPoolStats(value: string, poolStats?: TaskConfigPoolStats) {

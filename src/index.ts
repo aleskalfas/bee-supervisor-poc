@@ -1,32 +1,62 @@
-import "dotenv/config";
-import { createAgent } from "@agents/agent-factory.js";
 import { AgentKindEnumSchema } from "@agents/registry/dto.js";
-import { AgentRegistry } from "@agents/registry/registry.js";
+import {
+  AgentRegistry,
+  AgentRegistrySwitches,
+  CreateAgentConfig,
+} from "@agents/registry/registry.js";
 import { AgentStateLogger } from "@agents/state/logger.js";
-import { TaskManager } from "@tasks/manager/manager.js";
+import { TaskManager, TaskManagerSwitches } from "@tasks/manager/manager.js";
 import { TaskStateLogger } from "@tasks/state/logger.js";
 import { WorkspaceManager } from "@workspaces/manager/manager.js";
+import "dotenv/config";
+import { BaseAgentFactory } from "./agents/base/agent-factory.js";
+import { operator, supervisor } from "./agents/index.js";
+import { AgentFactory } from "./beeai/agent-factory.js";
 import { BeeAgent } from "bee-agent-framework/agents/bee/agent";
-import { supervisor, operator } from "./agents/index.js";
 
-export async function createBeeSupervisor(workspace = "default") {
+export interface Switches {
+  taskManager?: TaskManagerSwitches;
+  agentRegistry?: AgentRegistrySwitches;
+}
+
+export interface CreateBeeSupervisorConfig {
+  agentConfigFixtures?: CreateAgentConfig[];
+  agentFactory?: BaseAgentFactory<unknown>;
+  workspace?: string;
+  switches?: Switches;
+}
+
+export async function createBeeSupervisor({
+  agentFactory,
+  agentConfigFixtures,
+  workspace,
+  switches,
+}: CreateBeeSupervisorConfig): Promise<BeeAgent> {
   // Reset audit logs
   AgentStateLogger.init();
   TaskStateLogger.init();
 
   // Setup workspace
-  WorkspaceManager.init(["workspaces"], workspace);
+  WorkspaceManager.init(["workspaces"], workspace ?? "default");
 
-  const registry = new AgentRegistry<BeeAgent>({
+  let _agentFactory = agentFactory;
+  if (_agentFactory == null) {
+    // Default agent factory
+    _agentFactory = new AgentFactory();
+  }
+
+  const registry = new AgentRegistry<ReturnType<typeof _agentFactory.createAgent>>({
+    switches: switches?.agentRegistry,
     agentLifecycle: {
       async onCreate(
         config,
         agentId,
         toolsFactory,
-      ): Promise<{ agentId: string; instance: BeeAgent }> {
+      ): Promise<{ agentId: string; instance: ReturnType<typeof _agentFactory.createAgent> }> {
         const { agentKind, agentType, instructions, description } = config;
         const tools = config.tools == null ? toolsFactory.getAvailableToolsNames() : config.tools;
-        const instance = createAgent(
+
+        const instance = _agentFactory.createAgent(
           {
             agentKind,
             agentType,
@@ -36,12 +66,14 @@ export async function createBeeSupervisor(workspace = "default") {
             tools,
           },
           toolsFactory,
+          switches,
         );
 
         return { agentId, instance };
       },
-      async onDestroy(instance) {
-        instance.destroy();
+      async onDestroy(/** instance */) {
+        // FIXME Not all agents support destruction
+        // instance.destroy();
       },
     },
     onAgentConfigCreated(agentKind, agentType) {
@@ -52,8 +84,9 @@ export async function createBeeSupervisor(workspace = "default") {
     },
   });
 
-  const taskManager = new TaskManager(
-    async (
+  const taskManager = new TaskManager({
+    switches: switches?.taskManager,
+    onTaskStart: async (
       taskRun,
       taskManager,
       { onAwaitingAgentAcquired, onAgentAcquired, onAgentComplete, onAgentError },
@@ -61,7 +94,8 @@ export async function createBeeSupervisor(workspace = "default") {
       let agent;
       try {
         agent = await registry.acquireAgent(taskRun.config.agentKind, taskRun.config.agentType);
-      } catch {
+      } catch (err) {
+        console.error(err);
         onAwaitingAgentAcquired(taskRun.taskRunId, taskManager);
         return;
       }
@@ -69,34 +103,10 @@ export async function createBeeSupervisor(workspace = "default") {
       onAgentAcquired(taskRun.taskRunId, agent.agentId, taskManager);
       const { instance } = agent;
       const prompt = taskRun.taskRunInput;
-      instance
-        .run(
-          { prompt },
-          {
-            execution: {
-              maxIterations: 8,
-              maxRetriesPerStep: 2,
-              totalMaxRetries: 10,
-            },
-          },
-        )
-        // .observe((emitter) => {
-        //   emitter.on("update", (data, meta) => {
-        //     reader.write(
-        //       `${(meta.creator as any).input.meta.name} 🤖 (${data.update.key}) :`,
-        //       data.update.value,
-        //     );
-        //   });
-        //   emitter.on("error", (data, meta) => {
-        //     reader.write(
-        //       `${(meta.creator as any).input.meta.name} 🤖 (${data.error.name}) :`,
-        //       data.error.message,
-        //     );
-        //   });
-        // })
-        .then((resp) =>
-          onAgentComplete(resp.result.text, taskRun.taskRunId, agent.agentId, taskManager),
-        )
+
+      _agentFactory
+        .runAgent(instance, prompt)
+        .then((resp) => onAgentComplete(resp, taskRun.taskRunId, agent.agentId, taskManager))
         .catch((err) => {
           onAgentError(err, taskRun.taskRunId, agent.agentId, taskManager);
         })
@@ -104,7 +114,7 @@ export async function createBeeSupervisor(workspace = "default") {
           registry.releaseAgent(agent.agentId);
         });
     },
-  );
+  });
 
   await registry.registerToolsFactories([
     [
@@ -134,6 +144,12 @@ export async function createBeeSupervisor(workspace = "default") {
     });
   }
 
+  if (agentConfigFixtures?.length) {
+    for (const fixture of agentConfigFixtures) {
+      registry.createAgentConfig(fixture);
+    }
+  }
+
   const { instance: supervisorAgent, agentId: supervisorAgentId } = await registry.acquireAgent(
     AgentKindEnumSchema.Enum.supervisor,
     supervisor.AgentTypes.BOSS,
@@ -160,5 +176,7 @@ export async function createBeeSupervisor(workspace = "default") {
   // Base on these agents can you prepare related tasks. And one extra agent and task that will summarize task outputs other tasks.
   // Can you create a personal profile of Dario Gil?
 
-  return supervisorAgent;
+  // Prepare a marketing strategy to sell most selling mobile phones in 2024 in Europe on my eshop. Ensure the strategy is based on top of thorough research of the market.
+
+  return supervisorAgent as BeeAgent;
 }
