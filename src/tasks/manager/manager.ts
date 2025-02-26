@@ -50,6 +50,48 @@ const TASK_MANAGER_CONFIG_PATH = ["configs", "task_manager.jsonl"] as const;
 
 const MAX_POOL_SIZE = 100;
 
+export interface TaskManagerSwitches {
+  restoration: boolean;
+}
+
+export interface TaskMangerOptions {
+  errorHandler?: (error: Error, taskRunId: TaskRunIdValue) => void;
+  occupancyTimeoutMs?: number;
+  adminIds?: string[];
+  maxHistoryEntries?: number;
+}
+
+export type OnTaskStart = (
+  taskRun: TaskRun,
+  taskManager: TaskManager,
+  callbacks: {
+    onAwaitingAgentAcquired: (taskRunId: TaskRunIdValue, taskManage: TaskManager) => void;
+    onAgentAcquired: (
+      taskRunId: TaskRunIdValue,
+      agentId: AgentIdValue,
+      taskManage: TaskManager,
+    ) => void;
+    onAgentComplete: (
+      output: string,
+      taskRunId: TaskRunIdValue,
+      agentId: AgentIdValue,
+      taskManage: TaskManager,
+    ) => void;
+    onAgentError: (
+      err: Error,
+      taskRunId: TaskRunIdValue,
+      agentId: AgentIdValue,
+      taskManage: TaskManager,
+    ) => void;
+  },
+) => Promise<unknown>;
+
+export interface TaskManagerConfig {
+  onTaskStart: OnTaskStart;
+  options?: TaskMangerOptions;
+  switches?: TaskManagerSwitches;
+}
+
 export class TaskManager extends WorkspaceRestorable {
   /** Map of registered task type and their configurations */
   private taskConfigs: Map<TaskKindEnum, Map<TaskTypeValue, TaskConfig[]>>;
@@ -69,39 +111,11 @@ export class TaskManager extends WorkspaceRestorable {
   private ac: ResourcesAccessControl;
   private stateLogger: TaskStateLogger;
   private agentStateLogger: AgentStateLogger;
+  private onTaskStart: OnTaskStart;
+  private options: TaskMangerOptions;
+  private _switches: TaskManagerSwitches;
 
-  constructor(
-    private onTaskStart: (
-      taskRun: TaskRun,
-      taskManager: TaskManager,
-      callbacks: {
-        onAwaitingAgentAcquired: (taskRunId: TaskRunIdValue, taskManage: TaskManager) => void;
-        onAgentAcquired: (
-          taskRunId: TaskRunIdValue,
-          agentId: AgentIdValue,
-          taskManage: TaskManager,
-        ) => void;
-        onAgentComplete: (
-          output: string,
-          taskRunId: TaskRunIdValue,
-          agentId: AgentIdValue,
-          taskManage: TaskManager,
-        ) => void;
-        onAgentError: (
-          err: Error,
-          taskRunId: TaskRunIdValue,
-          agentId: AgentIdValue,
-          taskManage: TaskManager,
-        ) => void;
-      },
-    ) => Promise<unknown>,
-    private options: {
-      errorHandler?: (error: Error, taskRunId: TaskRunIdValue) => void;
-      occupancyTimeoutMs?: number;
-      adminIds?: string[];
-      maxHistoryEntries?: number;
-    } = {},
-  ) {
+  constructor({ onTaskStart, options, switches }: TaskManagerConfig) {
     super(TASK_MANAGER_CONFIG_PATH, TASK_MANAGER_USER);
     this.logger.info("Initializing TaskManager");
     this.stateLogger = TaskStateLogger.getInstance();
@@ -110,6 +124,8 @@ export class TaskManager extends WorkspaceRestorable {
     this.ac = new ResourcesAccessControl(this.constructor.name, [TASK_MANAGER_USER]);
     this.ac.createResource(TASK_MANAGER_RESOURCE, TASK_MANAGER_USER, TASK_MANAGER_USER);
 
+    this.onTaskStart = onTaskStart;
+
     this.options = {
       errorHandler: (error: Error, taskRunId: TaskRunIdValue) => {
         this.logger.error({ taskRunId, error }, "Task error occurred");
@@ -117,12 +133,13 @@ export class TaskManager extends WorkspaceRestorable {
       occupancyTimeoutMs: 30 * 60 * 1000,
       adminIds: [],
       maxHistoryEntries: 100, // Default to keeping last 100 entries
-      ...options,
+      ...(options || {}),
     };
 
     // Initialize task pools for all task kinds
     this.taskConfigs = new Map(TaskKindEnumSchema.options.map((kind) => [kind, new Map()]));
     this.taskPools = new Map(TaskKindEnumSchema.options.map((kind) => [kind, new Map()]));
+    this._switches = { restoration: true, ...clone(switches) };
 
     this.taskStartIntervalId = setInterval(async () => {
       try {
@@ -131,6 +148,18 @@ export class TaskManager extends WorkspaceRestorable {
         this.logger.error(err, "Process next start task error");
       }
     }, 100); // Runs every 100ms (0.1 second)
+  }
+
+  get switches() {
+    return clone(this._switches);
+  }
+
+  restore(actingAgentId: AgentIdValue): void {
+    if (this.switches.restoration === false) {
+      this.logger.warn(`Skipping restoration`);
+      return;
+    }
+    super.restore(actingAgentId);
   }
 
   protected restoreEntity(

@@ -1,6 +1,9 @@
-import { clone, isNonNullish } from "remeda";
 import { BaseToolsFactory } from "@/base/tools-factory.js";
 import { updateDeepPartialObject } from "@/utils/objects.js";
+import { AgentStateLogger } from "@agents/state/logger.js";
+import { WorkspaceResource } from "@workspaces/manager/index.js";
+import { WorkspaceRestorable } from "@workspaces/restore/restorable.js";
+import { clone, isNonNullish } from "remeda";
 import {
   agentConfigIdToValue,
   agentIdToString,
@@ -21,9 +24,6 @@ import {
   AgentTypeValue,
   AgentWithInstance,
 } from "./dto.js";
-import { AgentStateLogger } from "@agents/state/logger.js";
-import { WorkspaceRestorable } from "@workspaces/restore/restorable.js";
-import { WorkspaceResource } from "@workspaces/manager/index.js";
 
 /**
  * Callbacks for managing agent lifecycle events.
@@ -77,6 +77,25 @@ export type AgentTypesMap = Map<AgentKindEnum, Set<string>>;
 const AGENT_REGISTRY_USER = "agent_registry_user";
 const AGENT_REGISTRY_CONFIG_PATH = ["configs", "agent_registry.jsonl"] as const;
 
+export type CreateAgentConfig = Omit<AgentConfig, "agentConfigId" | "agentConfigVersion">;
+
+export interface AgentRegistrySwitches {
+  mutableAgentConfigs: boolean;
+  restoration: boolean;
+}
+
+export interface AgentRegistryConfig<TAgentInstance> {
+  switches?: AgentRegistrySwitches;
+  onAgentConfigCreated: (agentKind: AgentKindEnum, agentType: AgentTypeValue) => void;
+  onAgentAvailable: (
+    agentKind: AgentKindEnum,
+    agentType: AgentTypeValue,
+    agentConfigVersion: AgentConfigVersionValue,
+    availableCount: number,
+  ) => void;
+  agentLifecycle: AgentLifecycleCallbacks<TAgentInstance>;
+}
+
 export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
   /** Map of registered agent kind and their configurations */
   private agentConfigs: Map<AgentKindEnum, Map<AgentTypeValue, AgentConfig[]>>;
@@ -102,21 +121,14 @@ export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
   private poolsCleanupJobExecuting = false;
   private poolsToCleanup: string[] = [];
   private stateLogger: AgentStateLogger;
+  private _switches: AgentRegistrySwitches;
 
   constructor({
     agentLifecycle,
     onAgentConfigCreated,
     onAgentAvailable,
-  }: {
-    onAgentConfigCreated: (agentKind: AgentKindEnum, agentType: AgentTypeValue) => void;
-    onAgentAvailable: (
-      agentKind: AgentKindEnum,
-      agentType: AgentTypeValue,
-      agentConfigVersion: AgentConfigVersionValue,
-      availableCount: number,
-    ) => void;
-    agentLifecycle: AgentLifecycleCallbacks<TAgentInstance>;
-  }) {
+    switches,
+  }: AgentRegistryConfig<TAgentInstance>) {
     super(AGENT_REGISTRY_CONFIG_PATH, AGENT_REGISTRY_USER);
     this.logger.info("Initializing AgentRegistry");
     this.stateLogger = AgentStateLogger.getInstance();
@@ -126,9 +138,18 @@ export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
     // Initialize agent pools for all agent kinds
     this.agentConfigs = new Map(AgentKindEnumSchema.options.map((kind) => [kind, new Map()]));
     this.agentPools = new Map(AgentKindEnumSchema.options.map((kind) => [kind, new Map()]));
+    this._switches = { mutableAgentConfigs: true, restoration: true, ...clone(switches) };
+  }
+
+  get switches() {
+    return clone(this._switches);
   }
 
   restore(): void {
+    if (this.switches.restoration === false) {
+      this.logger.warn(`Skipping restoration`);
+      return;
+    }
     super.restore(AGENT_REGISTRY_USER);
   }
 
@@ -252,10 +273,16 @@ export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
     return factory;
   }
 
-  createAgentConfig(
-    config: Omit<AgentConfig, "agentConfigVersion" | "agentConfigId">,
-    persist = true,
-  ): AgentConfig {
+  private validateConfigMutability() {
+    // FIXME Disabled because need to create supervisor
+    // if (!this.switches.mutableAgentConfigs) {
+    //   throw new Error(
+    //     `Can't mutate any agent config due to this.switches.immutableAgentConfigs:${this.switches.mutableAgentConfigs}`,
+    //   );
+    // }
+  }
+
+  createAgentConfig(config: CreateAgentConfig, persist = true): AgentConfig {
     const { agentKind, agentType, maxPoolSize } = config;
     this.logger.info(
       {
@@ -266,32 +293,36 @@ export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
       "Create new agent config",
     );
 
+    this.validateConfigMutability();
+
     const agentTypesMap = this.getAgentConfigMap(agentKind);
     if (agentTypesMap.has(agentType)) {
       this.logger.error({ agentType }, "Agent type already registered");
       throw new Error(`Agent type '${agentType}' is already registered`);
     }
 
-    const toolsFactory = this.getToolsFactory(config.agentKind);
-    const availableTools = toolsFactory.getAvailableTools();
-    if (config.tools.filter((it) => !!it.length).length) {
-      const undefinedTools = config.tools.filter(
-        (tool) => !availableTools.some((at) => at.toolName === tool),
-      );
-      if (undefinedTools.length) {
-        this.logger.error(
-          {
-            availableTools: availableTools.map((at) => at.toolName),
-            undefinedTools,
-          },
-          `Tool wasn't found between available tools `,
+    if (config.tools.length) {
+      const toolsFactory = this.getToolsFactory(config.agentKind);
+      const availableTools = toolsFactory.getAvailableTools();
+      if (config.tools.filter((it) => !!it.length).length) {
+        const undefinedTools = config.tools.filter(
+          (tool) => !availableTools.some((at) => at.toolName === tool),
         );
-        throw new Error(
-          `Tools [${undefinedTools.join(",")}] weren't found between available tools [${availableTools.map((at) => at.toolName).join(",")}]`,
-        );
+        if (undefinedTools.length) {
+          this.logger.error(
+            {
+              availableTools: availableTools.map((at) => at.toolName),
+              undefinedTools,
+            },
+            `Tool wasn't found between available tools `,
+          );
+          throw new Error(
+            `Tools [${undefinedTools.join(",")}] weren't found between available tools [${availableTools.map((at) => at.toolName).join(",")}]`,
+          );
+        }
+      } else {
+        config.tools = [];
       }
-    } else {
-      config.tools = [];
     }
 
     const agentConfigVersion = 1;
@@ -326,6 +357,14 @@ export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
         >
       >,
   ) {
+    this.logger.debug(
+      {
+        update,
+      },
+      "Update agent config",
+    );
+    this.validateConfigMutability();
+
     const { agentKind, agentType } = update;
     const config = this.getAgentConfig(update.agentKind, update.agentType);
 
@@ -588,7 +627,6 @@ export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
     );
     const configVersions = this.getAgentConfigMap(agentKind).get(agentType);
     if (!configVersions) {
-      this.logger.error({ agentType }, "Agent config not found");
       throw new Error(`Agent kind '${agentKind}' type '${agentType}' was not found`);
     }
     if (agentConfigVersion != null) {
@@ -613,7 +651,7 @@ export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
     agentType: AgentTypeValue,
     agentConfigVersion: number,
   ): AgentConfig {
-    this.logger.trace(
+    this.logger.debug(
       {
         agentKind,
         agentType,
@@ -621,6 +659,8 @@ export class AgentRegistry<TAgentInstance> extends WorkspaceRestorable {
       },
       "Destroying agent configuration",
     );
+
+    this.validateConfigMutability();
     const configVersions = this.getAgentConfigMap(agentKind).get(agentType);
     if (!configVersions) {
       this.logger.error({ agentType }, "Agent config versions was not found");

@@ -62,14 +62,16 @@ export class TaskMonitor extends BaseMonitor {
       switch (update.type) {
         case StateUpdateType.TASK_CONFIG:
         case StateUpdateType.POOL:
-          this.updateTaskPoolsList(false);
+          this.updateTaskPoolsList();
+          this.onTaskRunSelect(this.taskRunListSelectedIndex || 0);
           break;
         case StateUpdateType.TASK_RUN:
-          this.updateTaskVersionsList(false);
+          this.updateTaskVersionsList();
+          this.onTaskRunSelect(this.taskRunListSelectedIndex || 0);
           break;
-        case StateUpdateType.HISTORY_ENTRY:
-          this.updateTaskRunDetails(undefined, false);
-          break;
+        // case StateUpdateType.HISTORY_ENTRY:
+        //   this.updateTaskRunDetails();
+        //   break;
         //   case StateUpdateType.AGENT:
         //     this.updateAgentVersionsList(false);
         //     this.updateAgentDetails();
@@ -145,7 +147,7 @@ export class TaskMonitor extends BaseMonitor {
     // Center column - Details and Tools (40%)
     this.taskConfigDetail = blessed.box({
       parent: this.parent,
-      width: "40%",
+      width: "70%",
       height: "30%",
       left: "30%",
       top: 0,
@@ -162,7 +164,7 @@ export class TaskMonitor extends BaseMonitor {
 
     this.taskRunDetail = blessed.box({
       parent: this.parent,
-      width: "40%",
+      width: "70%",
       height: "60%",
       left: "30%",
       top: "30%",
@@ -198,62 +200,69 @@ export class TaskMonitor extends BaseMonitor {
     this.screen.render();
   }
 
-  private setupEventHandlers() {
-    this.screen.key(["escape", "q", "C-c"], () => process.exit(0));
-
-    this.taskPoolList.on("select", (_, selectedIndex) => {
-      this.taskPoolListSelectedIndex = selectedIndex;
-      const itemData = this.taskPoolListItemsData[this.taskPoolListSelectedIndex];
-      if (!itemData) {
-        throw new Error(
-          `Missing data for selected pool on index:${this.taskPoolListSelectedIndex}`,
-        );
-      }
-      let taskConfig;
+  private onPoolSelect(selectedIndex: number) {
+    this.taskPoolListSelectedIndex = selectedIndex;
+    const itemData = this.taskPoolListItemsData[this.taskPoolListSelectedIndex];
+    let taskConfig;
+    if (itemData) {
       const taskTypeId = itemData.taskTypeId;
       if ((taskTypeId as TaskTypeId).taskType) {
         taskConfig = this.stateBuilder.getTaskConfig(
           taskSomeIdToTypeValue(taskTypeId as TaskTypeId),
         );
       }
+    }
 
-      this.updateTaskConfig(taskConfig, false);
-      this.updateTaskVersionsList();
-    });
+    this.updateTaskConfig(taskConfig, false);
+    this.updateTaskVersionsList(false);
+    this.onVersionSelect(0, true);
+  }
 
-    this.taskVersionsList.on("select", (_, selectedIndex) => {
-      this.taskVersionsListSelectedIndex = selectedIndex;
-      const itemData = this.taskVersionsListItemsData[this.taskVersionsListSelectedIndex];
-      if (!itemData) {
-        throw new Error(`Missing data for selectedIndex:${this.taskVersionsListSelectedIndex}`);
-      }
-
+  private onVersionSelect(selectedIndex: number, fromParent = false) {
+    this.taskVersionsListSelectedIndex = selectedIndex;
+    const itemData = this.taskVersionsListItemsData[this.taskVersionsListSelectedIndex];
+    let taskConfig;
+    if (itemData) {
       const taskConfigId = itemData.taskTypeId as TaskConfig;
-      const taskConfig = this.stateBuilder.getTaskConfig(
+      taskConfig = this.stateBuilder.getTaskConfig(
         taskSomeIdToTypeValue(taskConfigId),
         taskConfigId.taskConfigVersion,
       );
+    }
 
+    if (!fromParent || taskConfig) {
       this.updateTaskConfig(taskConfig, false);
-      this.updateTaskVersionsList();
-    });
+    }
+    this.updateTaskVersionsList(false);
+    this.onTaskRunSelect(0, true);
+  }
 
-    this.taskRunList.on("select", (_, selectedIndex) => {
-      this.taskRunListSelectedIndex = selectedIndex;
-      const itemData = this.taskRunListItemsData[this.taskRunListSelectedIndex];
-      if (!itemData) {
-        throw new Error(`Missing data for selectedIndex:${this.taskPoolListSelectedIndex}`);
-      }
+  private onTaskRunSelect(selectedIndex: number, fromParent = false) {
+    this.taskRunListSelectedIndex = selectedIndex;
+    const itemData = this.taskRunListItemsData[this.taskRunListSelectedIndex];
+    let taskConfig;
+    if (itemData) {
       const { taskRun } = itemData;
       const taskRunConfigId = stringToTaskConfig(taskRun.taskConfigId);
       const taskRunTypeId = taskSomeIdToTypeValue(taskRunConfigId);
-      const taskRunConfig = this.stateBuilder.getTaskConfig(
+      taskConfig = this.stateBuilder.getTaskConfig(
         taskRunTypeId,
         taskRunConfigId.taskConfigVersion,
       );
-      this.updateTaskConfig(taskRunConfig, false);
-      this.updateTaskRunDetails(itemData.taskRun);
-    });
+    }
+
+    if (!fromParent || taskConfig) {
+      this.updateTaskConfig(taskConfig, false);
+    }
+    this.updateTaskRunDetails((itemData && itemData.taskRun) || undefined);
+  }
+
+  private setupEventHandlers() {
+    this.screen.key(["escape", "q", "C-c"], () => process.exit(0));
+
+    this.taskPoolList.on("select", (_, selectedIndex) => this.onPoolSelect(selectedIndex));
+    this.taskVersionsList.on("select", (_, selectedIndex) => this.onVersionSelect(selectedIndex));
+    this.taskRunList.on("select", (_, selectedIndex) => this.onTaskRunSelect(selectedIndex));
 
     // Mouse scrolling for all components
     [
@@ -454,10 +463,11 @@ export class TaskMonitor extends BaseMonitor {
     }
 
     const details = [
-      `${st.label("Id")}:  ${st.taskConfigId(taskConfig.taskConfigId)}`,
+      `${st.label("Id")}:  ${st.taskConfigId(stringToTaskConfig(taskConfig.taskConfigId))} (${st.label(taskConfig.taskConfigId)})`,
       `${st.label("Version")}:  ${st.versionNum(taskConfig.taskConfigVersion)}`,
       `${st.label("Task Kind")}:  ${st.taskKind(taskConfig.taskKind)}`,
       `${st.label("Task Type")}:  ${st.taskType(taskConfig.taskType)}`,
+      `${st.label("Required Agent")}:  ${st.agentId({ agentKind: taskConfig.agentKind, agentType: taskConfig.agentType, agentNum: taskConfig.agentNum, agentConfigVersion: taskConfig.agentVersion })}`,
       `${st.label("Max Repeats")}:  ${st.num(taskConfig.maxRepeats || 0)}`,
       `${st.label("Interval ms")}:  ${st.num(taskConfig.intervalMs)}`,
       `${st.label("Concurrency Mode")}:  ${st.concurrencyMode(taskConfig.concurrencyMode)}`,
@@ -500,7 +510,7 @@ export class TaskMonitor extends BaseMonitor {
     const { isDestroyed } = taskRunInfo;
 
     const details = [
-      `${st.label("Id")}: ${st.taskRunId(stringToTaskRun(taskRunId))}`,
+      `${st.label("Id")}: ${st.taskRunId(stringToTaskRun(taskRunId))} (${st.label(taskRunId)})`,
       `${st.label("In Use")}: ${st.bool(isTaskRunActiveStatus(status), "busy_idle")}`,
       `${st.label("Status")}: ${st.taskRunStatus(status)}`,
       `${st.label("Is Destroyed")}: ${st.bool(isDestroyed, "inverse_color")}`,

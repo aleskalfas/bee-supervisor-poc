@@ -6,8 +6,8 @@ import {
   ToolEmitter,
   ToolInput,
 } from "bee-agent-framework/tools/base";
+import { isNonNullish } from "remeda";
 import { z } from "zod";
-import { AgentInstanceRef, AgentRegistry } from "./registry.js";
 import {
   Agent,
   AgentConfig,
@@ -16,6 +16,7 @@ import {
   AgentKindEnumSchema,
   AvailableTool,
 } from "./dto.js";
+import { AgentInstanceRef, AgentRegistry } from "./registry.js";
 
 export const TOOL_NAME = "agent_registry";
 export interface AgentRegistryToolInput extends BaseToolOptions {
@@ -157,17 +158,24 @@ export class AgentRegistryTool extends Tool<
   }
 
   inputSchema() {
-    return z.discriminatedUnion("method", [
-      GetAvailableToolsSchema,
-      CreateAgentConfigSchema,
-      UpdateAgentConfigSchema,
+    const schemas = [
+      ...(this.registry.switches.mutableAgentConfigs
+        ? [
+            GetAvailableToolsSchema,
+            CreateAgentConfigSchema,
+            UpdateAgentConfigSchema,
+            GetPoolStatsSchema,
+          ]
+        : []),
       GetAllAgentConfigsSchema,
       GetAgentConfigSchema,
       GetAgentConfigVersionSchema,
       GetActiveAgentsSchema,
       GetAgentSchema,
-      GetPoolStatsSchema,
-    ]);
+    ]
+      .flat()
+      .filter(isNonNullish);
+    return z.discriminatedUnion("method", schemas as any);
   }
 
   protected async _run(input: ToolInput<this>) {
@@ -210,6 +218,8 @@ export class AgentRegistryTool extends Tool<
       case "getPoolStats":
         data = this.registry.getPoolStats(input.agentKind, input.agentType);
         break;
+      default:
+        throw new Error(`Undefined method ${input.method}`);
     }
     return new JSONToolOutput({
       method: input.method,

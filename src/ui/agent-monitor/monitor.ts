@@ -19,7 +19,7 @@ const AGENT_LIST_DEFAULT_TEXT = "Select pool to view agents";
 const AGENT_VERSION_DEFAULT_TEXT = "Select pool to view versions";
 const AGENT_TEMPLATE_DETAIL_DEFAULT_TEXT = "Select agent pool to view agent config detail";
 const AGENT_DETAIL_DEFAULT_TEXT = "Select agent to view agent detail";
-const AGENT_LIFECYCLE_HISTORY_DEFAULT_TEXT = "Select agent to view lifecycle events";
+// const AGENT_LIFECYCLE_HISTORY_DEFAULT_TEXT = "Select agent to view lifecycle events";
 
 export class AgentMonitor extends BaseMonitor {
   private stateBuilder: AgentStateBuilder;
@@ -46,7 +46,7 @@ export class AgentMonitor extends BaseMonitor {
 
   private agentConfigDetail: blessed.Widgets.BoxElement;
   private agentDetail: blessed.Widgets.BoxElement;
-  private lifecycleHistory: blessed.Widgets.BoxElement;
+  // private lifecycleHistory: blessed.Widgets.BoxElement;
   private logBox: blessed.Widgets.Log;
 
   private lifecycleEvents = new Map<
@@ -68,14 +68,16 @@ export class AgentMonitor extends BaseMonitor {
         case StateUpdateType.TOOLS:
         case StateUpdateType.AGENT_CONFIG:
         case StateUpdateType.POOL:
-          this.updateAgentPoolsList(false);
+          this.updateAgentPoolsList();
+          this.onAgentSelect(this.agentListSelectedIndex || 0);
           break;
         case StateUpdateType.AGENT:
           this.updateAgentVersionsList(false);
-          this.updateAgentDetails();
+          this.onAgentSelect(this.agentListSelectedIndex || 0);
           break;
         case StateUpdateType.ASSIGNMENT:
           this.updateAgentDetails();
+          this.onAgentSelect(this.agentListSelectedIndex || 0);
           break;
         case StateUpdateType.FULL:
           // Full refresh
@@ -146,7 +148,7 @@ export class AgentMonitor extends BaseMonitor {
     // Center column - Details and Tools (40%)
     this.agentConfigDetail = blessed.box({
       parent: this.parent,
-      width: "40%",
+      width: "70%",
       height: "40%",
       left: "30%",
       top: 0,
@@ -163,7 +165,7 @@ export class AgentMonitor extends BaseMonitor {
 
     this.agentDetail = blessed.box({
       parent: this.parent,
-      width: "40%",
+      width: "70%",
       height: "50%",
       left: "30%",
       top: "40%",
@@ -178,23 +180,23 @@ export class AgentMonitor extends BaseMonitor {
       scrollbar: st.UIConfig.scrollbar,
     });
 
-    // Right column - Lifecycle History (30%)
-    this.lifecycleHistory = blessed.box({
-      parent: this.parent,
-      width: "30%",
-      height: "90%",
-      left: "70%",
-      top: 0,
-      border: { type: "line" },
-      label: " Lifecycle Events ",
-      content: AGENT_LIFECYCLE_HISTORY_DEFAULT_TEXT,
-      tags: true,
-      scrollable: true,
-      mouse: true,
-      keys: true,
-      vi: true,
-      scrollbar: st.UIConfig.scrollbar,
-    });
+    // // Right column - Lifecycle History (30%)
+    // this.lifecycleHistory = blessed.box({
+    //   parent: this.parent,
+    //   width: "30%",
+    //   height: "90%",
+    //   left: "70%",
+    //   top: 0,
+    //   border: { type: "line" },
+    //   label: " Lifecycle Events ",
+    //   content: AGENT_LIFECYCLE_HISTORY_DEFAULT_TEXT,
+    //   tags: true,
+    //   scrollable: true,
+    //   mouse: true,
+    //   keys: true,
+    //   vi: true,
+    //   scrollbar: st.UIConfig.scrollbar,
+    // });
 
     // Bottom - Live Updates
     this.logBox = blessed.log({
@@ -217,62 +219,66 @@ export class AgentMonitor extends BaseMonitor {
     this.screen.render();
   }
 
-  private setupEventHandlers() {
-    this.screen.key(["escape", "q", "C-c"], () => process.exit(0));
+  private onPoolSelect(selectedIndex: number) {
+    this.agentPoolListSelectedIndex = selectedIndex;
+    const itemData = this.agentPoolListItemsData[this.agentPoolListSelectedIndex];
+    if (!itemData) {
+      throw new Error(`Missing data for selected pool on index:${this.agentPoolListSelectedIndex}`);
+    }
+    let agentConfig;
+    const agentTypeId = itemData.agentTypeId;
+    if ((agentTypeId as AgentTypeId).agentType) {
+      agentConfig = this.stateBuilder.getAgentConfig(
+        agentSomeIdToTypeValue(agentTypeId as AgentTypeId),
+      );
+    }
 
-    this.agentPoolList.on("select", (_, selectedIndex) => {
-      this.agentPoolListSelectedIndex = selectedIndex;
-      const itemData = this.agentPoolListItemsData[this.agentPoolListSelectedIndex];
-      if (!itemData) {
-        throw new Error(
-          `Missing data for selected pool on index:${this.agentPoolListSelectedIndex}`,
-        );
-      }
-      let agentConfig;
-      const agentTypeId = itemData.agentTypeId;
-      if ((agentTypeId as AgentTypeId).agentType) {
-        agentConfig = this.stateBuilder.getAgentConfig(
-          agentSomeIdToTypeValue(agentTypeId as AgentTypeId),
-        );
-      }
+    this.updateAgentConfig(agentConfig, false);
+    this.updateAgentVersionsList(false);
+    this.onVersionSelect(0, true);
+  }
 
-      this.updateAgentConfig(agentConfig, false);
-      this.updateAgentVersionsList();
-    });
-
-    this.agentVersionsList.on("select", (_, selectedIndex) => {
-      this.agentVersionsListSelectedIndex = selectedIndex;
-      const itemData = this.agentVersionsListItemsData[this.agentVersionsListSelectedIndex];
-      if (!itemData) {
-        throw new Error(`Missing data for selectedIndex:${this.agentVersionsListSelectedIndex}`);
-      }
-
+  private onVersionSelect(selectedIndex: number, fromParent = false) {
+    this.agentVersionsListSelectedIndex = selectedIndex;
+    const itemData = this.agentVersionsListItemsData[this.agentVersionsListSelectedIndex];
+    let agentConfig;
+    if (itemData) {
       const agentConfigId = itemData.agentTypeId as AgentConfig;
-      const agentConfig = this.stateBuilder.getAgentConfig(
+      agentConfig = this.stateBuilder.getAgentConfig(
         agentSomeIdToTypeValue(agentConfigId),
         agentConfigId.agentConfigVersion,
       );
+    }
 
+    if (!fromParent || agentConfig) {
       this.updateAgentConfig(agentConfig, false);
-      this.updateAgentVersionsList();
-    });
+    }
+    this.updateAgentVersionsList(false);
+    this.onAgentSelect(0, true);
+  }
 
-    this.agentList.on("select", (_, selectedIndex) => {
-      this.agentListSelectedIndex = selectedIndex;
-      const itemData = this.agentListItemsData[this.agentListSelectedIndex];
-      if (!itemData) {
-        throw new Error(`Missing data for selectedIndex:${this.agentPoolListSelectedIndex}`);
-      }
+  private onAgentSelect(selectedIndex: number, fromParent = false) {
+    this.agentListSelectedIndex = selectedIndex;
+    const itemData = this.agentListItemsData[this.agentListSelectedIndex];
+    let agentConfig;
+    if (itemData) {
       const { agent } = itemData;
       const agentConfigId = stringToAgentConfig(agent.agentConfigId);
       const agentTypeId = agentSomeIdToTypeValue(agentConfigId);
-      const agentConfig = this.stateBuilder.getAgentConfig(
-        agentTypeId,
-        agentConfigId.agentConfigVersion,
-      );
+      agentConfig = this.stateBuilder.getAgentConfig(agentTypeId, agentConfigId.agentConfigVersion);
+    }
+    if (!fromParent || agentConfig) {
       this.updateAgentConfig(agentConfig, false);
-      this.updateAgentDetails(itemData.agent);
-    });
+    }
+    this.updateAgentDetails((itemData && itemData.agent) || undefined);
+  }
+
+  private setupEventHandlers() {
+    this.screen.key(["escape", "q", "C-c"], () => process.exit(0));
+
+    this.agentPoolList.on("select", (_, selectedIndex) => this.onPoolSelect(selectedIndex));
+    this.agentVersionsList.on("select", (_, selectedIndex) => this.onVersionSelect(selectedIndex));
+    this.agentList.on("select", (_, selectedIndex) => this.onAgentSelect(selectedIndex));
 
     // Mouse scrolling for all components
     [
@@ -280,7 +286,7 @@ export class AgentMonitor extends BaseMonitor {
       this.agentList,
       this.agentConfigDetail,
       this.agentDetail,
-      this.lifecycleHistory,
+      // this.lifecycleHistory,
     ].forEach((component) => {
       component.on("mouse", (data) => {
         if (data.action === "wheelup") {
@@ -554,33 +560,33 @@ export class AgentMonitor extends BaseMonitor {
     }
   }
 
-  private updateLifecycleHistory(agentId?: string, shouldRender = true): void {
-    if (!agentId) {
-      this.lifecycleHistory.setContent(AGENT_LIFECYCLE_HISTORY_DEFAULT_TEXT);
-      if (shouldRender) {
-        this.screen.render();
-      }
-      return;
-    }
+  // private updateLifecycleHistory(agentId?: string, shouldRender = true): void {
+  //   if (!agentId) {
+  //     this.lifecycleHistory.setContent(AGENT_LIFECYCLE_HISTORY_DEFAULT_TEXT);
+  //     if (shouldRender) {
+  //       this.screen.render();
+  //     }
+  //     return;
+  //   }
 
-    const events = this.lifecycleEvents.get(agentId) || [];
-    const content = events.length
-      ? events
-          .map(
-            ({ timestamp, event, success, error }) =>
-              `${st.timestamp(timestamp)} ` +
-              `${st.eventType(event)} ` +
-              `${st.bool(success)}` +
-              (error ? `\n  ${st.error(error)}` : ""),
-          )
-          .join("\n")
-      : "No lifecycle events recorded";
+  //   const events = this.lifecycleEvents.get(agentId) || [];
+  //   const content = events.length
+  //     ? events
+  //         .map(
+  //           ({ timestamp, event, success, error }) =>
+  //             `${st.timestamp(timestamp)} ` +
+  //             `${st.eventType(event)} ` +
+  //             `${st.bool(success)}` +
+  //             (error ? `\n  ${st.error(error)}` : ""),
+  //         )
+  //         .join("\n")
+  //     : "No lifecycle events recorded";
 
-    this.lifecycleHistory.setContent(content);
-    if (shouldRender) {
-      this.screen.render();
-    }
-  }
+  //   this.lifecycleHistory.setContent(content);
+  //   if (shouldRender) {
+  //     this.screen.render();
+  //   }
+  // }
 
   public async start(): Promise<void> {
     const logPath = join(process.cwd(), "logs", "agent_state.log");

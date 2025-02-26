@@ -6,7 +6,9 @@ const args = process.argv.slice(2);
 const workspace = args[0];
 
 const reader = createConsoleReader({ fallback: "What is the current weather in Las Vegas?" });
-const supervisorAgent = await createBeeSupervisor(workspace);
+const supervisorAgent = await createBeeSupervisor({
+  workspace,
+});
 for await (const { prompt } of reader) {
   try {
     const response = await supervisorAgent
