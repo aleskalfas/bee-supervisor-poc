@@ -14,7 +14,7 @@ export class PlatformSdk {
 
   private constructor() {
     this.logger = Logger.root.child({ name: this.constructor.name });
-    this.transport = new SSEClientTransport(new URL("http://localhost:8333/mcp/sse"));
+    this.transport = new SSEClientTransport(new URL("http://127.0.0.1:8333/mcp/sse"));
     this.client = new MCPClient(
       {
         name: "supervisor-agent",

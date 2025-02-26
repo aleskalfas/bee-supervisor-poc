@@ -43,7 +43,7 @@
     "url": "https://github.com/aleskalfas/bee-supervisor-poc/issues"
   },
   "scripts": {
-    "start:beeai": "tsx --inspect --no-warnings src/beeai.js",
+    "start:beeai": "tsx --no-warnings src/beeai.js",
     "start:dev": "tsx --inspect --no-warnings src/main.js",
     "monitor": "tsx --inspect --no-warnings src/ui/main.js",
     "ts:check": "tsc --noEmit --project tsconfig.json",
