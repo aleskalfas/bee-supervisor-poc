@@ -1,5 +1,8 @@
 # 🐝 Bee Supervisor
 
+> [!WARNING]
+> This POC was transformed into project with own repo https://github.com/i-am-bee/beeai-supervisor.
+
 A proof-of-concept implementation of a multi-agent task management system that demonstrates hierarchical agent coordination and task based on [BeeAI Framework](https://i-am-bee.github.io/bee-agent-framework#/) ❤️.
 
 ## 🚀 Running the Project
